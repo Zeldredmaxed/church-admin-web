@@ -1,659 +1,498 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
+import api from '@/utils/api';
 import { useRouter } from 'next/navigation';
-import api, { API_URL } from '@/utils/api';
-import { Search, MoreVertical, Edit, Download, Loader2, X, Tag, Plus, MessageSquare } from 'lucide-react';
+import { Search, Plus, Filter, MessageSquare, Tag as TagIcon, X, Edit2, Check, User, ChevronDown, ChevronUp } from 'lucide-react';
 
-interface Tag {
-  id: string;
-  name: string;
-  color: string;
-}
-
-interface UserTag {
-  tag: Tag;
-}
-
-interface User {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  role: 'ADMIN' | 'LEADER' | 'MEMBER' | 'GUEST';
-  avatarUrl?: string;
-  createdAt: string;
-  tags: UserTag[];
-}
+const API_BASE = 'http://localhost:3000';
 
 export default function PeoplePage() {
   const router = useRouter();
-  const [users, setUsers] = useState<User[]>([]);
-  const [allTags, setAllTags] = useState<Tag[]>([]);
-  const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
+  
+  // --- DATA STATE ---
+  const [users, setUsers] = useState<any[]>([]);
+  const [tags, setTags] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedUser, setSelectedUser] = useState<string | null>(null);
-  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
-  const [syncingTagId, setSyncingTagId] = useState<string | null>(null);
-  const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set()); // Track which avatars failed to load
+  
+  // --- FILTER STATE ---
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [genderFilter, setGenderFilter] = useState('All');
+  const [maritalFilter, setMaritalFilter] = useState('All');
+  const [ageGroup, setAgeGroup] = useState('All');
+  const [membershipStatus, setMembershipStatus] = useState('All');
+  const [ministryInterest, setMinistryInterest] = useState('All');
+  const [attendanceFreq, setAttendanceFreq] = useState('All');
+  
+  // Boolean Filters
+  const [isBaptized, setIsBaptized] = useState(false);
+  const [isNewMember, setIsNewMember] = useState(false);
+  const [hasChildren, setHasChildren] = useState(false);
+  const [pastoralCare, setPastoralCare] = useState(false);
 
-  // Modal states
-  const [showCreateTagModal, setShowCreateTagModal] = useState(false);
-  const [showEditTagsModal, setShowEditTagsModal] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [userTags, setUserTags] = useState<Set<string>>(new Set()); // Track which tags user has
+  // --- EDIT USER MODAL STATE ---
+  const [showEditUserModal, setShowEditUserModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const [activeTab, setActiveTab] = useState('Basic'); 
 
-  // Create tag form state
-  const [tagFormData, setTagFormData] = useState({
-    name: '',
-    color: '#6B7280', // Default gray color
-  });
-  const [submittingTag, setSubmittingTag] = useState(false);
-  const [togglingTags, setTogglingTags] = useState<Set<string>>(new Set()); // Track tags being toggled
+  // Edit Form Fields
+  const [editGender, setEditGender] = useState('');
+  const [editMarital, setEditMarital] = useState('');
+  const [editDob, setEditDob] = useState('');
+  const [editParenting, setEditParenting] = useState('');
+  const [editSingleParent, setEditSingleParent] = useState(false);
+  const [editMembership, setEditMembership] = useState('');
+  const [editIsBaptized, setEditIsBaptized] = useState(false);
+  const [editMinistrySkills, setEditMinistrySkills] = useState('');
+  const [editPastoralCareNeeded, setEditPastoralCareNeeded] = useState(false);
+  const [editCareTypes, setEditCareTypes] = useState('');
+  const [editLifeEvents, setEditLifeEvents] = useState('');
+  
+  // Tag Modal
+  const [showTagModal, setShowTagModal] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+  const [newTagColor, setNewTagColor] = useState('#1976D2');
 
-  useEffect(() => {
-    fetchUsers();
-    fetchTags();
-    // Get current user from localStorage
-    if (typeof window !== 'undefined') {
-      const userStr = localStorage.getItem('user');
-      if (userStr) {
-        try {
-          const user = JSON.parse(userStr);
-          setCurrentUser({ id: user.id });
-        } catch (e) {
-          console.error('Error parsing user data:', e);
-        }
-      }
-    }
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
-  useEffect(() => {
-    filterUsers();
-  }, [searchQuery, users]);
-
-  // Update userTags when editingUser changes
-  useEffect(() => {
-    if (editingUser) {
-      const tagIds = new Set(editingUser.tags.map((ut) => ut.tag.id));
-      setUserTags(tagIds);
-    }
-  }, [editingUser]);
-
-  const fetchUsers = async () => {
+  const fetchData = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/users');
-      setUsers(response.data);
-      setFilteredUsers(response.data);
-    } catch (error: any) {
-      console.error('Error fetching users:', error);
-      alert('Failed to load users. Please try again.');
+      const [usersRes, tagsRes] = await Promise.all([
+        api.get('/users'),
+        api.get('/tags')
+      ]);
+      setUsers(usersRes.data);
+      setTags(tagsRes.data);
+    } catch (error) {
+      console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchTags = async () => {
+  // --- FILTER LOGIC ---
+  const applyFilter = async () => {
+    setLoading(true);
     try {
-      const response = await api.get('/tags');
-      setAllTags(response.data);
-    } catch (error: any) {
-      console.error('Error fetching tags:', error);
-      // Don't show alert, tags might not be critical for initial load
-    }
-  };
-
-  const filterUsers = () => {
-    if (!searchQuery.trim()) {
-      setFilteredUsers(users);
-      return;
-    }
-
-    const query = searchQuery.toLowerCase();
-    const filtered = users.filter(
-      (user) =>
-        user.firstName.toLowerCase().includes(query) ||
-        user.lastName.toLowerCase().includes(query) ||
-        user.email.toLowerCase().includes(query) ||
-        `${user.firstName} ${user.lastName}`.toLowerCase().includes(query)
-    );
-    setFilteredUsers(filtered);
-  };
-
-  const handleCreateTag = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmittingTag(true);
-
-    try {
-      await api.post('/tags', {
-        name: tagFormData.name,
-        color: tagFormData.color,
-      });
-
-      // Reset form and close modal
-      setTagFormData({
-        name: '',
-        color: '#6B7280',
-      });
-      setShowCreateTagModal(false);
-
-      // Refresh tags list
-      fetchTags();
-    } catch (error: any) {
-      console.error('Error creating tag:', error);
-      alert(error.response?.data?.message || 'Failed to create tag. Please try again.');
-    } finally {
-      setSubmittingTag(false);
-    }
-  };
-
-  const handleEditTags = (user: User) => {
-    setEditingUser(user);
-    setShowEditTagsModal(true);
-    setSelectedUser(null); // Close the dropdown menu
-  };
-
-  const handleToggleTag = async (tagId: string, checked: boolean) => {
-    if (!editingUser) return;
-
-    // Optimistic UI update
-    const newUserTags = new Set(userTags);
-    if (checked) {
-      newUserTags.add(tagId);
-    } else {
-      newUserTags.delete(tagId);
-    }
-    setUserTags(newUserTags);
-    setTogglingTags((prev) => new Set(prev).add(tagId));
-
-    try {
-      if (checked) {
-        // Assign user to tag
-        await api.post(`/tags/${tagId}/users`, {
-          userId: editingUser.id,
-        });
-      } else {
-        // Remove user from tag
-        await api.delete(`/tags/${tagId}/users/${editingUser.id}`);
-      }
-
-      // Refresh users to get updated tag data
-      await fetchUsers();
-
-      // Update editingUser if modal is still open
-      if (editingUser) {
-        const updatedUser = users.find((u) => u.id === editingUser.id);
-        if (updatedUser) {
-          setEditingUser(updatedUser);
+      // Calculate Age Logic
+      let minAge, maxAge;
+      if (ageGroup !== 'All') {
+        switch (ageGroup) {
+          case 'Child': minAge = 0; maxAge = 12; break;
+          case 'Youth': minAge = 13; maxAge = 18; break;
+          case 'Young Adult': minAge = 19; maxAge = 29; break;
+          case 'Adult': minAge = 30; maxAge = 64; break;
+          case 'Senior': minAge = 65; maxAge = 120; break;
         }
       }
-    } catch (error: any) {
-      console.error('Error toggling tag:', error);
-      // Revert optimistic update on error
-      setUserTags(new Set(editingUser.tags.map((ut) => ut.tag.id)));
-      alert(error.response?.data?.message || 'Failed to update tag. Please try again.');
+
+      const criteria = {
+        gender: genderFilter !== 'All' ? genderFilter : undefined,
+        maritalStatus: maritalFilter !== 'All' ? maritalFilter : undefined,
+        membershipStatus: membershipStatus !== 'All' ? membershipStatus : undefined,
+        ministryInterest: ministryInterest !== 'All' ? ministryInterest : undefined,
+        attendanceFreq: attendanceFreq !== 'All' ? attendanceFreq : undefined,
+        isBaptized: isBaptized ? true : undefined,
+        isNewMember: isNewMember ? true : undefined,
+        hasChildren: hasChildren ? true : undefined,
+        pastoralCareNeeded: pastoralCare ? true : undefined,
+        minAge,
+        maxAge
+      };
+
+      const response = await api.post('/users/filter', criteria);
+      setUsers(response.data);
+    } catch (error) {
+      console.error('Filter error:', error);
+      alert('Filter failed. Check backend logs.');
     } finally {
-      setTogglingTags((prev) => {
-        const next = new Set(prev);
-        next.delete(tagId);
-        return next;
-      });
+      setLoading(false);
     }
   };
 
-  const handleMessageTag = async (tag: Tag) => {
-    if (!currentUser) {
-      alert('User not found. Please log in again.');
-      return;
-    }
+  const clearFilters = () => {
+    setGenderFilter('All');
+    setMaritalFilter('All');
+    setAgeGroup('All');
+    setMembershipStatus('All');
+    setMinistryInterest('All');
+    setIsBaptized(false);
+    setIsNewMember(false);
+    fetchData();
+  };
 
-    setSyncingTagId(tag.id);
+  const messageFilteredGroup = async () => {
+    const groupName = prompt(`Name this group (${users.length} people):`);
+    if (!groupName) return;
     try {
-      const response = await api.post('/chat/tag-group', {
-        tagId: tag.id,
-        adminId: currentUser.id,
+      const adminUser = JSON.parse(localStorage.getItem('user') || '{}');
+      await api.post('/chat/group', {
+        name: groupName,
+        adminId: adminUser.id,
+        memberIds: users.map(u => u.id)
       });
-
-      // Redirect to chat page with the conversation ID
-      const conversationId = response.data.id;
-      router.push(`/dashboard/chat?groupId=${conversationId}`);
-    } catch (error: any) {
-      console.error('Error creating tag group:', error);
-      alert(error.response?.data?.message || 'Failed to open tag group chat. Please try again.');
-    } finally {
-      setSyncingTagId(null);
+      router.push('/dashboard/chat');
+    } catch (error) {
+      alert('Could not create group');
     }
   };
 
-  const getInitials = (user: User) => {
-    return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
+  // --- EDIT USER LOGIC ---
+  const openEditUser = (user: any) => {
+    setSelectedUser(user);
+    setEditGender(user.gender || '');
+    setEditMarital(user.maritalStatus || '');
+    setEditDob(user.dateOfBirth ? user.dateOfBirth.split('T')[0] : '');
+    setEditParenting(user.parentingStage || '');
+    setEditSingleParent(user.singleParent || false);
+    setEditMembership(user.membershipStatus || '');
+    setEditIsBaptized(user.isBaptized || false);
+    // Arrays to string
+    setEditMinistrySkills(user.ministrySkills ? user.ministrySkills.join(', ') : '');
+    setEditPastoralCareNeeded(user.pastoralCareNeeded || false);
+    setEditCareTypes(user.careTypes ? user.careTypes.join(', ') : '');
+    setEditLifeEvents(user.lifeEvents ? user.lifeEvents.join(', ') : '');
+    
+    setShowEditUserModal(true);
   };
 
-  const getAvatarUrl = (avatarUrl?: string): string | null => {
-    if (!avatarUrl) return null;
-    // If it already starts with http, use it as is
-    if (avatarUrl.startsWith('http')) {
-      return avatarUrl;
+  const saveUserDemographics = async () => {
+    if (!selectedUser) return;
+    try {
+      const toArray = (str: string) => str ? str.split(',').map(s => s.trim()).filter(s => s.length > 0) : [];
+      
+      const payload = {
+        gender: editGender,
+        maritalStatus: editMarital,
+        dateOfBirth: editDob ? new Date(editDob).toISOString() : undefined,
+        parentingStage: editParenting,
+        singleParent: editSingleParent,
+        membershipStatus: editMembership,
+        isBaptized: editIsBaptized,
+        ministrySkills: toArray(editMinistrySkills),
+        pastoralCareNeeded: editPastoralCareNeeded,
+        careTypes: toArray(editCareTypes),
+        lifeEvents: toArray(editLifeEvents),
+      };
+
+      await api.patch(`/users/${selectedUser.id}`, payload);
+      setShowEditUserModal(false);
+      fetchData();
+      alert('User updated!');
+    } catch (error) {
+      console.error('Save failed', error);
+      alert('Failed to save changes.');
     }
-    // If it starts with /, prepend the base URL
-    if (avatarUrl.startsWith('/')) {
-      return `${API_URL}${avatarUrl}`;
-    }
-    // Fallback: return as is (shouldn't happen, but just in case)
-    return avatarUrl;
   };
 
-  const handleImageError = (userId: string) => {
-    setFailedAvatars(prev => new Set(prev).add(userId));
+  // --- TAG LOGIC ---
+  const createTag = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.post('/tags', { name: newTagName, color: newTagColor });
+      setShowTagModal(false);
+      setNewTagName('');
+      const res = await api.get('/tags');
+      setTags(res.data);
+    } catch (error) { alert('Error creating tag'); }
   };
 
-  const getRoleBadgeColor = (role: string) => {
-    switch (role) {
-      case 'ADMIN':
-        return 'bg-blue-100 text-blue-800';
-      case 'LEADER':
-        return 'bg-purple-100 text-purple-800';
-      case 'MEMBER':
-        return 'bg-gray-100 text-gray-800';
-      case 'GUEST':
-        return 'bg-orange-100 text-orange-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
+  const toggleTagForUser = async (tagId: string, hasTag: boolean) => {
+    if (!selectedUser) return;
+    try {
+      if (hasTag) await api.delete(`/tags/${tagId}/users/${selectedUser.id}`);
+      else await api.post(`/tags/${tagId}/users`, { userId: selectedUser.id });
+      
+      const res = await api.get(`/users/${selectedUser.id}`);
+      setSelectedUser(res.data);
+      setUsers(users.map(u => u.id === selectedUser.id ? res.data : u));
+    } catch (error) { console.error('Tag error', error); }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+  // Helper
+  const getAvatarUrl = (url?: string) => {
+    if (!url) return null;
+    return url.startsWith('http') ? url : `${API_BASE}${url}`;
   };
-
-  const exportToCSV = () => {
-    const headers = ['Name', 'Email', 'Role', 'Tags', 'Joined Date'];
-    const rows = users.map((user) => [
-      `${user.firstName} ${user.lastName}`,
-      user.email,
-      user.role,
-      user.tags.map((ut) => ut.tag.name).join(', '),
-      formatDate(user.createdAt),
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map((row) => row.map((cell) => `"${cell}"`).join(',')),
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `people-directory-${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading people directory...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div>
-      {/* Header Section */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="p-8 max-w-7xl mx-auto">
+      <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">People Directory</h1>
-          <p className="text-gray-600">Manage members, roles, and tags</p>
+          <h1 className="text-2xl font-bold text-gray-900">People Directory</h1>
+          <p className="text-gray-500">Manage {users.length} members</p>
         </div>
-        <button
-          onClick={exportToCSV}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
-        >
-          <Download className="w-4 h-4" />
-          Export CSV
-        </button>
-      </div>
-
-      {/* Search Bar and Manage Tags Button */}
-      <div className="mb-6 flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Search by name or email..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-        <button
-          onClick={() => setShowCreateTagModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors whitespace-nowrap"
-        >
-          <Tag className="w-4 h-4" />
-          Manage Tags
-        </button>
-      </div>
-
-      {/* Table */}
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Name
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Role
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Tags
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Joined
-                </th>
-                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredUsers.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
-                    {searchQuery ? 'No users found matching your search.' : 'No users found.'}
-                  </td>
-                </tr>
-              ) : (
-                filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50">
-                    {/* Avatar/Name Column */}
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        {getAvatarUrl(user.avatarUrl) && !failedAvatars.has(user.id) ? (
-                          <img
-                            src={getAvatarUrl(user.avatarUrl)!}
-                            alt={`${user.firstName} ${user.lastName}`}
-                            className="w-10 h-10 rounded-full object-cover mr-3"
-                            onError={() => handleImageError(user.id)}
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold text-sm mr-3">
-                            {getInitials(user)}
-                          </div>
-                        )}
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {user.firstName} {user.lastName}
-                          </div>
-                          <div className="text-sm text-gray-500">{user.email}</div>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Role Column */}
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span
-                        className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getRoleBadgeColor(
-                          user.role
-                        )}`}
-                      >
-                        {user.role}
-                      </span>
-                    </td>
-
-                    {/* Tags Column */}
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-2">
-                        {user.tags.length === 0 ? (
-                          <span className="text-sm text-gray-400">No tags</span>
-                        ) : (
-                          user.tags.map((userTag) => (
-                            <span
-                              key={userTag.tag.id}
-                              className="px-2 py-1 text-xs font-medium rounded-full text-white"
-                              style={{
-                                backgroundColor: userTag.tag.color || '#6B7280',
-                              }}
-                            >
-                              {userTag.tag.name}
-                            </span>
-                          ))
-                        )}
-                      </div>
-                    </td>
-
-                    {/* Joined Date Column */}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {formatDate(user.createdAt)}
-                    </td>
-
-                    {/* Actions Column */}
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="relative inline-block">
-                        <button
-                          onClick={() => setSelectedUser(selectedUser === user.id ? null : user.id)}
-                          className="p-1 rounded-md hover:bg-gray-200 transition-colors"
-                          aria-label="More actions"
-                        >
-                          <MoreVertical className="w-5 h-5 text-gray-600" />
-                        </button>
-
-                        {selectedUser === user.id && (
-                          <>
-                            <div
-                              className="fixed inset-0 z-10"
-                              onClick={() => setSelectedUser(null)}
-                            ></div>
-                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
-                              <button
-                                onClick={() => {
-                                  handleEditTags(user);
-                                }}
-                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                              >
-                                <Edit className="w-4 h-4" />
-                                Edit Tags
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Footer with count */}
-        <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
-          <p className="text-sm text-gray-600">
-            Showing {filteredUsers.length} of {users.length} {users.length === 1 ? 'person' : 'people'}
-            {searchQuery && ` matching "${searchQuery}"`}
-          </p>
+        <div className="flex gap-2">
+          <button onClick={() => setShowTagModal(true)} className="px-4 py-2 bg-white border rounded hover:bg-gray-50">
+            Manage Tags
+          </button>
+          <button onClick={() => setShowFilterPanel(!showFilterPanel)} className={`px-4 py-2 rounded flex items-center gap-2 ${showFilterPanel ? 'bg-blue-100 text-blue-700' : 'bg-blue-600 text-white'}`}>
+            <Filter size={18} /> {showFilterPanel ? 'Hide Filters' : 'Filters'}
+          </button>
         </div>
       </div>
 
-      {/* Create Tag Modal */}
-      {showCreateTagModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div
-            className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
-            onClick={() => !submittingTag && setShowCreateTagModal(false)}
-          ></div>
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full">
-              <div className="flex items-center justify-between p-6 border-b border-gray-200">
-                <h2 className="text-2xl font-bold text-gray-900">Create New Tag</h2>
-                <button
-                  onClick={() => !submittingTag && setShowCreateTagModal(false)}
-                  disabled={submittingTag}
-                  className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
-                >
-                  <X className="w-6 h-6" />
-                </button>
+      {/* COLLAPSIBLE FILTER PANEL */}
+      {showFilterPanel && (
+        <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200 mb-6 animate-in slide-in-from-top-2">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Demographics */}
+            <div className="space-y-3">
+              <h4 className="font-bold text-gray-700 text-sm uppercase">Demographics</h4>
+              <select value={genderFilter} onChange={e => setGenderFilter(e.target.value)} className="w-full border rounded p-2 text-sm">
+                <option value="All">Gender: All</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+              </select>
+              <select value={maritalFilter} onChange={e => setMaritalFilter(e.target.value)} className="w-full border rounded p-2 text-sm">
+                <option value="All">Marital: All</option>
+                <option value="Single">Single</option>
+                <option value="Married">Married</option>
+                <option value="Divorced">Divorced</option>
+                <option value="Widowed">Widowed</option>
+              </select>
+              <select value={ageGroup} onChange={e => setAgeGroup(e.target.value)} className="w-full border rounded p-2 text-sm">
+                <option value="All">Age Group: All</option>
+                <option value="Child">Child (0-12)</option>
+                <option value="Youth">Youth (13-18)</option>
+                <option value="Young Adult">Young Adult (19-29)</option>
+                <option value="Adult">Adult (30-64)</option>
+                <option value="Senior">Senior (65+)</option>
+              </select>
+            </div>
+
+            {/* Spiritual & Ministry */}
+            <div className="space-y-3">
+              <h4 className="font-bold text-gray-700 text-sm uppercase">Ministry</h4>
+              <select value={membershipStatus} onChange={e => setMembershipStatus(e.target.value)} className="w-full border rounded p-2 text-sm">
+                <option value="All">Status: All</option>
+                <option value="Member">Member</option>
+                <option value="Visitor">Visitor</option>
+                <option value="Leadership">Leadership</option>
+              </select>
+              <select value={ministryInterest} onChange={e => setMinistryInterest(e.target.value)} className="w-full border rounded p-2 text-sm">
+                <option value="All">Interest: All</option>
+                <option value="Worship">Worship</option>
+                <option value="Tech">Tech</option>
+                <option value="Youth">Youth</option>
+                <option value="Kids">Children's Ministry</option>
+              </select>
+              <div className="flex gap-4 pt-2">
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isBaptized} onChange={e => setIsBaptized(e.target.checked)} /> Baptized</label>
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isNewMember} onChange={e => setIsNewMember(e.target.checked)} /> New Member</label>
               </div>
-              <form onSubmit={handleCreateTag} className="p-6 space-y-4">
-                <div>
-                  <label htmlFor="tagName" className="block text-sm font-medium text-gray-700 mb-1">
-                    Tag Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="tagName"
-                    required
-                    value={tagFormData.name}
-                    onChange={(e) => setTagFormData({ ...tagFormData, name: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="e.g., Worship Team"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="tagColor" className="block text-sm font-medium text-gray-700 mb-1">
-                    Color <span className="text-red-500">*</span>
-                  </label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      id="tagColor"
-                      required
-                      value={tagFormData.color}
-                      onChange={(e) => setTagFormData({ ...tagFormData, color: e.target.value })}
-                      className="w-16 h-10 border border-gray-300 rounded-md cursor-pointer"
-                    />
-                    <input
-                      type="text"
-                      value={tagFormData.color}
-                      onChange={(e) => setTagFormData({ ...tagFormData, color: e.target.value })}
-                      className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-                      placeholder="#6B7280"
-                      pattern="^#[0-9A-Fa-f]{6}$"
-                    />
-                  </div>
-                  <p className="mt-1 text-xs text-gray-500">Hex color code (e.g., #FF5733)</p>
-                </div>
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
-                  <button
-                    type="button"
-                    onClick={() => setShowCreateTagModal(false)}
-                    disabled={submittingTag}
-                    className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submittingTag}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    {submittingTag && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Create Tag
-                  </button>
-                </div>
-              </form>
+            </div>
+
+            {/* Care & Family */}
+            <div className="space-y-3">
+              <h4 className="font-bold text-gray-700 text-sm uppercase">Care & Family</h4>
+              <select value={attendanceFreq} onChange={e => setAttendanceFreq(e.target.value)} className="w-full border rounded p-2 text-sm">
+                <option value="All">Attendance: All</option>
+                <option value="Weekly">Weekly</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Occasional">Occasional</option>
+              </select>
+              <div className="space-y-2 pt-2">
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={hasChildren} onChange={e => setHasChildren(e.target.checked)} /> Has Children</label>
+                <label className="flex items-center gap-2 text-sm text-red-600 font-medium"><input type="checkbox" checked={pastoralCare} onChange={e => setPastoralCare(e.target.checked)} /> Needs Pastoral Care</label>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-between border-t pt-4">
+            <button onClick={clearFilters} className="text-gray-500 hover:text-black text-sm">Reset All</button>
+            <div className="flex gap-3">
+              <button onClick={applyFilter} className="px-6 py-2 bg-blue-600 text-white rounded font-medium hover:bg-blue-700">Apply Filters</button>
+              <button onClick={messageFilteredGroup} className="px-4 py-2 bg-green-600 text-white rounded font-medium hover:bg-green-700 flex items-center gap-2">
+                <MessageSquare size={16} /> Message These {users.length}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Edit User Tags Modal */}
-      {showEditTagsModal && editingUser && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div
-            className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
-            onClick={() => setShowEditTagsModal(false)}
-          ></div>
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] overflow-y-auto">
-              <div className="flex items-center justify-between p-6 border-b border-gray-200">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Edit Tags</h2>
-                  <p className="text-sm text-gray-600 mt-1">
-                    {editingUser.firstName} {editingUser.lastName}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowEditTagsModal(false)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-              <div className="p-6">
-                {allTags.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Tag className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-600">No tags available. Create a tag first.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {allTags.map((tag) => {
-                      const isChecked = userTags.has(tag.id);
-                      const isToggling = togglingTags.has(tag.id);
-                      const isSyncing = syncingTagId === tag.id;
+      {/* USER TABLE */}
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-gray-50 border-b">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Name</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Status</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Tags</th>
+              <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase">Edit</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {users.map(user => {
+              const avatar = getAvatarUrl(user.avatarUrl);
+              return (
+                <tr key={user.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 flex items-center gap-3">
+                    {avatar ? 
+                      <img src={avatar} className="w-10 h-10 rounded-full object-cover" /> :
+                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">{user.firstName[0]}</div>
+                    }
+                    <div>
+                      <div className="font-medium text-gray-900">{user.firstName} {user.lastName}</div>
+                      <div className="text-xs text-gray-500">{user.email}</div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm">{user.membershipStatus || 'Visitor'}</div>
+                    <div className="text-xs text-gray-500">{user.gender} • {user.ageGroup || user.maritalStatus}</div>
+                  </td>
+                  <td className="px-6 py-4 flex flex-wrap gap-1">
+                    {user.tags.map((t: any) => (
+                      <span key={t.tag.id} style={{backgroundColor: t.tag.color}} className="px-2 py-0.5 rounded text-xs text-white">{t.tag.name}</span>
+                    ))}
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <button onClick={() => openEditUser(user)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-full"><Edit2 size={18}/></button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
-                      return (
-                        <div
-                          key={tag.id}
-                          className="flex items-center p-3 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
-                        >
-                          <label className="flex items-center flex-1 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={(e) => handleToggleTag(tag.id, e.target.checked)}
-                              disabled={isToggling}
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50"
-                            />
-                            <div className="ml-3 flex-1 flex items-center gap-3">
-                              <span
-                                className="px-3 py-1 text-xs font-medium rounded-full text-white"
-                                style={{ backgroundColor: tag.color || '#6B7280' }}
-                              >
-                                {tag.name}
-                              </span>
-                              {isToggling && (
-                                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                              )}
-                            </div>
-                          </label>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleMessageTag(tag);
-                            }}
-                            disabled={isSyncing}
-                            className="ml-3 p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Open Tag Group Chat"
-                          >
-                            {isSyncing ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <MessageSquare className="w-4 h-4" />
-                            )}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+      {/* EDIT MODAL */}
+      {showEditUserModal && selectedUser && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="p-6 border-b flex justify-between items-center">
+              <h3 className="text-xl font-bold">Edit Profile</h3>
+              <button onClick={() => setShowEditUserModal(false)}><X size={24}/></button>
             </div>
+            
+            <div className="flex border-b">
+              {['Basic', 'Family', 'Ministry', 'Care'].map(tab => (
+                <button 
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`flex-1 py-3 text-sm font-medium ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-800'}`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              {activeTab === 'Basic' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 text-center mb-4">
+                    <h4 className="font-bold text-lg">{selectedUser.firstName} {selectedUser.lastName}</h4>
+                    <p className="text-sm text-gray-500">{selectedUser.email}</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold mb-1">Gender</label>
+                    <select value={editGender} onChange={e => setEditGender(e.target.value)} className="w-full border p-2 rounded">
+                      <option value="">Select</option><option value="Male">Male</option><option value="Female">Female</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold mb-1">Marital Status</label>
+                    <select value={editMarital} onChange={e => setEditMarital(e.target.value)} className="w-full border p-2 rounded">
+                      <option value="">Select</option><option value="Single">Single</option><option value="Married">Married</option><option value="Widowed">Widowed</option>
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-bold mb-1">Date of Birth</label>
+                    <input type="date" value={editDob} onChange={e => setEditDob(e.target.value)} className="w-full border p-2 rounded"/>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'Family' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold mb-1">Parenting Stage</label>
+                    <select value={editParenting} onChange={e => setEditParenting(e.target.value)} className="w-full border p-2 rounded">
+                      <option value="">Select</option><option value="Expecting">Expecting</option><option value="Young Kids">Young Kids</option><option value="Teens">Teens</option><option value="Empty Nest">Empty Nest</option>
+                    </select>
+                  </div>
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={editSingleParent} onChange={e => setEditSingleParent(e.target.checked)}/> Single Parent Household</label>
+                </div>
+              )}
+
+              {activeTab === 'Ministry' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold mb-1">Membership Status</label>
+                    <select value={editMembership} onChange={e => setEditMembership(e.target.value)} className="w-full border p-2 rounded">
+                      <option value="Visitor">Visitor</option><option value="Member">Member</option><option value="Leader">Leader</option>
+                    </select>
+                  </div>
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={editIsBaptized} onChange={e => setEditIsBaptized(e.target.checked)}/> Has been Baptized</label>
+                  <div>
+                    <label className="block text-xs font-bold mb-1">Ministry Skills (comma separated)</label>
+                    <input type="text" value={editMinistrySkills} onChange={e => setEditMinistrySkills(e.target.value)} className="w-full border p-2 rounded" placeholder="Singing, Tech, Kids..."/>
+                  </div>
+                  <div className="pt-4 border-t">
+                    <h4 className="text-sm font-bold mb-2">Manage Tags</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {tags.map(tag => {
+                        const hasTag = selectedUser.tags.some((t: any) => t.tag.id === tag.id);
+                        return (
+                          <button 
+                            key={tag.id} 
+                            onClick={() => toggleTagForUser(tag.id, hasTag)}
+                            className={`px-3 py-1 rounded text-xs border ${hasTag ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-600 border-gray-200'}`}
+                          >
+                            {tag.name} {hasTag && '✓'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'Care' && (
+                <div className="space-y-4">
+                  <div className="bg-red-50 p-4 rounded-lg border border-red-100">
+                    <label className="flex items-center gap-2 font-bold text-red-700">
+                      <input type="checkbox" checked={editPastoralCareNeeded} onChange={e => setEditPastoralCareNeeded(e.target.checked)}/> 
+                      NEEDS PASTORAL CARE
+                    </label>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold mb-1">Care Types / Needs</label>
+                    <input type="text" value={editCareTypes} onChange={e => setEditCareTypes(e.target.value)} className="w-full border p-2 rounded" placeholder="Grief, Financial, Marriage..."/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold mb-1">Recent Life Events</label>
+                    <input type="text" value={editLifeEvents} onChange={e => setEditLifeEvents(e.target.value)} className="w-full border p-2 rounded" placeholder="New Baby, Moved, Job Change..."/>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t bg-gray-50 flex justify-end gap-2">
+              <button onClick={() => setShowEditUserModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded">Cancel</button>
+              <button onClick={saveUserDemographics} className="px-6 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">Save Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE TAG MODAL */}
+      {showTagModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
+            <h3 className="text-lg font-bold mb-4">New Tag</h3>
+            <form onSubmit={createTag} className="space-y-4">
+              <input type="text" value={newTagName} onChange={e => setNewTagName(e.target.value)} className="w-full border p-2 rounded" placeholder="Tag Name" required/>
+              <div className="flex gap-2">
+                <input type="color" value={newTagColor} onChange={e => setNewTagColor(e.target.value)} className="h-10 w-16 p-1 border rounded"/>
+                <div className="flex-1 flex items-center px-3 border rounded bg-gray-50 text-gray-500">{newTagColor}</div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setShowTagModal(false)} className="px-4 py-2">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">Create</button>
+              </div>
+            </form>
           </div>
         </div>
       )}

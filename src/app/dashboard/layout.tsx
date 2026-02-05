@@ -19,7 +19,9 @@ import {
   ChevronDown,
   HandHeart,
   BookOpen,
+  Code,
 } from 'lucide-react';
+import FloatingAICommandBar from '@/components/FloatingAICommandBar';
 
 interface User {
   firstName?: string;
@@ -72,6 +74,7 @@ export default function DashboardLayout({
     { href: '/dashboard/announcements', label: 'Announcements', icon: Megaphone },
     { href: '/dashboard/finances', label: 'Giving / Finances', icon: Heart },
     { href: '/dashboard/chat', label: 'Chat Moderation', icon: MessageSquare },
+    { href: '/dashboard/developer', label: 'Developer', icon: Code },
   ];
 
   const displayName = user?.firstName && user?.lastName
@@ -240,6 +243,8 @@ export default function DashboardLayout({
           <div className="p-8">
             {children}
           </div>
+          {/* Floating AI Command Bar */}
+          <FloatingAICommandBar />
         </div>
       </main>
     </div>
