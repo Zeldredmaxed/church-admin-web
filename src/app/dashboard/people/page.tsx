@@ -7,6 +7,17 @@ import { Search, Plus, Filter, MessageSquare, Tag as TagIcon, X, Edit2, Check, U
 
 const API_BASE = 'http://localhost:3000';
 
+const PERMISSIONS = [
+  { key: 'SUPER_ADMIN', label: 'Full Access (Pastor)' },
+  { key: 'MANAGE_PEOPLE', label: 'Manage People & Tags' },
+  { key: 'MANAGE_EVENTS', label: 'Events & Calendar' },
+  { key: 'MANAGE_MEDIA', label: 'Media & Sermons' },
+  { key: 'MANAGE_PRAYER', label: 'Prayer Wall' },
+  { key: 'MANAGE_ANNOUNCEMENTS', label: 'Announcements' },
+  { key: 'MANAGE_FINANCE', label: 'Giving & Finances' },
+  { key: 'MANAGE_CHAT', label: 'Chat Moderation' },
+];
+
 export default function PeoplePage() {
   const router = useRouter();
   
@@ -47,6 +58,7 @@ export default function PeoplePage() {
   const [editPastoralCareNeeded, setEditPastoralCareNeeded] = useState(false);
   const [editCareTypes, setEditCareTypes] = useState('');
   const [editLifeEvents, setEditLifeEvents] = useState('');
+  const [editPermissions, setEditPermissions] = useState<string[]>([]);
   
   // Tag Modal
   const [showTagModal, setShowTagModal] = useState(false);
@@ -153,6 +165,7 @@ export default function PeoplePage() {
     setEditPastoralCareNeeded(user.pastoralCareNeeded || false);
     setEditCareTypes(user.careTypes ? user.careTypes.join(', ') : '');
     setEditLifeEvents(user.lifeEvents ? user.lifeEvents.join(', ') : '');
+    setEditPermissions(user.adminPermissions || []);
     
     setShowEditUserModal(true);
   };
@@ -174,6 +187,7 @@ export default function PeoplePage() {
         pastoralCareNeeded: editPastoralCareNeeded,
         careTypes: toArray(editCareTypes),
         lifeEvents: toArray(editLifeEvents),
+        adminPermissions: editPermissions,
       };
 
       await api.patch(`/users/${selectedUser.id}`, payload);
@@ -367,7 +381,7 @@ export default function PeoplePage() {
             </div>
             
             <div className="flex border-b">
-              {['Basic', 'Family', 'Ministry', 'Care'].map(tab => (
+              {['Basic', 'Family', 'Ministry', 'Care', ...(selectedUser.role === 'ADMIN' ? ['Permissions'] : [])].map(tab => (
                 <button 
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -465,6 +479,59 @@ export default function PeoplePage() {
                     <label className="block text-xs font-bold mb-1">Recent Life Events</label>
                     <input type="text" value={editLifeEvents} onChange={e => setEditLifeEvents(e.target.value)} className="w-full border p-2 rounded" placeholder="New Baby, Moved, Job Change..."/>
                   </div>
+                </div>
+              )}
+
+              {activeTab === 'Permissions' && selectedUser.role === 'ADMIN' && (
+                <div className="space-y-4">
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
+                    <p className="text-sm text-blue-800">
+                      Select the permissions this admin user should have. <strong>Full Access (Pastor)</strong> grants all permissions automatically.
+                    </p>
+                  </div>
+                  {PERMISSIONS.map(permission => {
+                    const isChecked = editPermissions.includes(permission.key);
+                    const isSuperAdmin = permission.key === 'SUPER_ADMIN';
+                    const isDisabled = editPermissions.includes('SUPER_ADMIN') && !isSuperAdmin;
+                    
+                    return (
+                      <label 
+                        key={permission.key}
+                        className={`flex items-center gap-3 p-3 rounded border ${isDisabled ? 'bg-gray-50 border-gray-200 opacity-60' : 'bg-white border-gray-200 hover:bg-gray-50'} cursor-pointer`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked || (editPermissions.includes('SUPER_ADMIN') && !isSuperAdmin)}
+                          disabled={isDisabled}
+                          onChange={(e) => {
+                            if (isSuperAdmin) {
+                              if (e.target.checked) {
+                                // If SUPER_ADMIN is checked, set all permissions
+                                setEditPermissions(PERMISSIONS.map(p => p.key));
+                              } else {
+                                // If SUPER_ADMIN is unchecked, remove it
+                                setEditPermissions(editPermissions.filter(p => p !== 'SUPER_ADMIN'));
+                              }
+                            } else {
+                              // Toggle individual permission
+                              if (e.target.checked) {
+                                setEditPermissions([...editPermissions, permission.key]);
+                              } else {
+                                setEditPermissions(editPermissions.filter(p => p !== permission.key));
+                              }
+                            }
+                          }}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900">{permission.label}</div>
+                          {isSuperAdmin && isChecked && (
+                            <div className="text-xs text-blue-600 mt-1">All permissions granted</div>
+                          )}
+                        </div>
+                      </label>
+                    );
+                  })}
                 </div>
               )}
             </div>
