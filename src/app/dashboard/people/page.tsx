@@ -59,6 +59,7 @@ export default function PeoplePage() {
   const [editCareTypes, setEditCareTypes] = useState('');
   const [editLifeEvents, setEditLifeEvents] = useState('');
   const [editPermissions, setEditPermissions] = useState<string[]>([]);
+  const [editRole, setEditRole] = useState('');
   
   // Tag Modal
   const [showTagModal, setShowTagModal] = useState(false);
@@ -166,6 +167,7 @@ export default function PeoplePage() {
     setEditCareTypes(user.careTypes ? user.careTypes.join(', ') : '');
     setEditLifeEvents(user.lifeEvents ? user.lifeEvents.join(', ') : '');
     setEditPermissions(user.adminPermissions || []);
+    setEditRole(user.role || 'MEMBER');
     
     setShowEditUserModal(true);
   };
@@ -188,6 +190,7 @@ export default function PeoplePage() {
         careTypes: toArray(editCareTypes),
         lifeEvents: toArray(editLifeEvents),
         adminPermissions: editPermissions,
+        role: editRole,
       };
 
       await api.patch(`/users/${selectedUser.id}`, payload);
@@ -381,7 +384,7 @@ export default function PeoplePage() {
             </div>
             
             <div className="flex border-b">
-              {['Basic', 'Family', 'Ministry', 'Care', ...(selectedUser.role === 'ADMIN' ? ['Permissions'] : [])].map(tab => (
+              {['Basic', 'Family', 'Ministry', 'Care', ...(editRole === 'ADMIN' ? ['Permissions'] : [])].map(tab => (
                 <button 
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -414,6 +417,19 @@ export default function PeoplePage() {
                   <div className="col-span-2">
                     <label className="block text-xs font-bold mb-1">Date of Birth</label>
                     <input type="date" value={editDob} onChange={e => setEditDob(e.target.value)} className="w-full border p-2 rounded"/>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-bold mb-1 text-red-600">Role <span className="text-gray-500 font-normal">(Sensitive Setting)</span></label>
+                    <select 
+                      value={editRole} 
+                      onChange={e => setEditRole(e.target.value)} 
+                      className="w-full border-2 border-red-300 p-2 rounded font-semibold bg-red-50"
+                    >
+                      <option value="MEMBER">MEMBER</option>
+                      <option value="ADMIN">ADMIN</option>
+                      <option value="LEADER">LEADER</option>
+                      <option value="GUEST">GUEST</option>
+                    </select>
                   </div>
                 </div>
               )}
@@ -482,7 +498,7 @@ export default function PeoplePage() {
                 </div>
               )}
 
-              {activeTab === 'Permissions' && selectedUser.role === 'ADMIN' && (
+              {activeTab === 'Permissions' && editRole === 'ADMIN' && (
                 <div className="space-y-4">
                   <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
                     <p className="text-sm text-blue-800">
