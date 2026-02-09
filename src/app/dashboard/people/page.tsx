@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import api from '@/utils/api';
 import { useRouter } from 'next/navigation';
-import { Search, Plus, Filter, MessageSquare, Tag as TagIcon, X, Edit2, Check, User, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, Plus, Filter, MessageSquare, Tag as TagIcon, X, Edit2, Check, User, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 
 const API_BASE = 'http://localhost:3000';
 
@@ -16,6 +16,7 @@ const PERMISSIONS = [
   { key: 'MANAGE_ANNOUNCEMENTS', label: 'Announcements' },
   { key: 'MANAGE_FINANCE', label: 'Giving & Finances' },
   { key: 'MANAGE_CHAT', label: 'Chat Moderation' },
+  { key: 'MANAGE_SUPPORT', label: 'Support & Bugs' },
 ];
 
 export default function PeoplePage() {
@@ -67,6 +68,23 @@ export default function PeoplePage() {
   const [newTagColor, setNewTagColor] = useState('#1976D2');
 
   useEffect(() => { fetchData(); }, []);
+
+  // Get current admin user and check if super admin
+  const getCurrentUser = () => {
+    try {
+      const userString = localStorage.getItem('user');
+      if (!userString) return null;
+      return JSON.parse(userString);
+    } catch {
+      return null;
+    }
+  };
+
+  const isSuperAdmin = () => {
+    const currentUser = getCurrentUser();
+    if (!currentUser?.adminPermissions) return false;
+    return currentUser.adminPermissions.includes('SUPER_ADMIN');
+  };
 
   const fetchData = async () => {
     try {
@@ -206,6 +224,38 @@ export default function PeoplePage() {
     } catch (error) {
       console.error('Save failed', error);
       alert('Failed to save changes.');
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!selectedUser) return;
+    
+    const currentUser = getCurrentUser();
+    if (!currentUser) {
+      alert('Unable to verify permissions.');
+      return;
+    }
+
+    // Prevent deleting yourself
+    if (selectedUser.id === currentUser.id) {
+      alert('You cannot delete your own account.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'WARNING: This will permanently delete this user, their chats, and history. Are you sure?'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await api.delete(`/users/${selectedUser.id}`);
+      setShowEditUserModal(false);
+      alert('User Deleted');
+      fetchData();
+    } catch (error) {
+      console.error('Delete failed', error);
+      alert('Failed to delete user.');
     }
   };
 
@@ -569,9 +619,22 @@ export default function PeoplePage() {
               )}
             </div>
 
-            <div className="p-6 border-t bg-gray-50 flex justify-end gap-2">
-              <button onClick={() => setShowEditUserModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded">Cancel</button>
-              <button onClick={saveUserDemographics} className="px-6 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">Save Changes</button>
+            <div className="p-6 border-t bg-gray-50 flex justify-between items-center gap-2">
+              <div>
+                {isSuperAdmin() && selectedUser && selectedUser.id !== getCurrentUser()?.id && (
+                  <button 
+                    onClick={handleDeleteUser}
+                    className="px-4 py-2 text-red-600 hover:bg-red-50 rounded flex items-center gap-2 font-medium"
+                  >
+                    <Trash2 size={16} />
+                    Delete User
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setShowEditUserModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded">Cancel</button>
+                <button onClick={saveUserDemographics} className="px-6 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">Save Changes</button>
+              </div>
             </div>
           </div>
         </div>
