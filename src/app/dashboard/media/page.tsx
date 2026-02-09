@@ -68,26 +68,16 @@ export default function MediaPage() {
   // Extract YouTube video ID from URL
   const extractYouTubeId = (url: string): string | null => {
     if (!url) return null;
-
-    // Handle various YouTube URL formats:
-    // https://www.youtube.com/watch?v=VIDEO_ID
-    // https://youtu.be/VIDEO_ID
-    // https://www.youtube.com/embed/VIDEO_ID
-    // https://m.youtube.com/watch?v=VIDEO_ID
-
-    const patterns = [
-      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/)([^&\n?#]+)/,
-      /youtube\.com\/watch\?.*v=([^&\n?#]+)/,
-    ];
-
-    for (const pattern of patterns) {
-      const match = url.match(pattern);
-      if (match && match[1]) {
-        return match[1];
-      }
+    
+    // Handle /live/ links
+    if (url.includes('/live/')) {
+      return url.split('/live/')[1].split(/[?&]/)[0];
     }
-
-    return null;
+    
+    // Handle standard links
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
   };
 
   // Get YouTube thumbnail URL
