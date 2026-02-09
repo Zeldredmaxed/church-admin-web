@@ -177,6 +177,12 @@ export default function PeoplePage() {
     try {
       const toArray = (str: string) => str ? str.split(',').map(s => s.trim()).filter(s => s.length > 0) : [];
       
+      // Filter out SUPER_ADMIN for LEADER role
+      let permissionsToSave = editPermissions;
+      if (editRole === 'LEADER') {
+        permissionsToSave = editPermissions.filter(p => p !== 'SUPER_ADMIN');
+      }
+      
       const payload = {
         gender: editGender,
         maritalStatus: editMarital,
@@ -189,7 +195,7 @@ export default function PeoplePage() {
         pastoralCareNeeded: editPastoralCareNeeded,
         careTypes: toArray(editCareTypes),
         lifeEvents: toArray(editLifeEvents),
-        adminPermissions: editPermissions,
+        adminPermissions: permissionsToSave,
         role: editRole,
       };
 
@@ -384,7 +390,7 @@ export default function PeoplePage() {
             </div>
             
             <div className="flex border-b">
-              {['Basic', 'Family', 'Ministry', 'Care', ...(editRole === 'ADMIN' ? ['Permissions'] : [])].map(tab => (
+              {['Basic', 'Family', 'Ministry', 'Care', ...(editRole === 'ADMIN' || editRole === 'LEADER' ? ['Permissions'] : [])].map(tab => (
                 <button 
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -498,17 +504,28 @@ export default function PeoplePage() {
                 </div>
               )}
 
-              {activeTab === 'Permissions' && editRole === 'ADMIN' && (
+              {activeTab === 'Permissions' && (editRole === 'ADMIN' || editRole === 'LEADER') && (
                 <div className="space-y-4">
                   <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
                     <p className="text-sm text-blue-800">
-                      Select the permissions this admin user should have. <strong>Full Access (Pastor)</strong> grants all permissions automatically.
+                      {editRole === 'ADMIN' ? (
+                        <>Select the permissions this admin user should have. <strong>Full Access (Pastor)</strong> grants all permissions automatically.</>
+                      ) : (
+                        <>Select the permissions this leader should have. Leaders cannot have Super Admin access.</>
+                      )}
                     </p>
                   </div>
                   {PERMISSIONS.map(permission => {
                     const isChecked = editPermissions.includes(permission.key);
                     const isSuperAdmin = permission.key === 'SUPER_ADMIN';
-                    const isDisabled = editPermissions.includes('SUPER_ADMIN') && !isSuperAdmin;
+                    const isLeader = editRole === 'LEADER';
+                    const isSuperAdminHidden = isLeader && isSuperAdmin;
+                    const isDisabled = (editPermissions.includes('SUPER_ADMIN') && !isSuperAdmin) || (isLeader && isSuperAdmin);
+                    
+                    // Hide SUPER_ADMIN for Leaders
+                    if (isSuperAdminHidden) {
+                      return null;
+                    }
                     
                     return (
                       <label 
