@@ -1,407 +1,170 @@
 'use client';
-
-import { useEffect, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { Megaphone, Pin, PinOff, Trash2, Plus, X } from 'lucide-react';
 import api from '@/utils/api';
-import { Plus, Trash2, X, Loader2, Megaphone, Pin } from 'lucide-react';
 
 interface Announcement {
   id: string;
   title: string;
   content: string;
   isPinned: boolean;
-  author: string;
   createdAt: string;
+  author?: { firstName: string; lastName: string };
 }
 
 export default function AnnouncementsPage() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [deletingAnnouncementId, setDeletingAnnouncementId] = useState<string | null>(null);
-  const [pinningAnnouncementId, setPinningAnnouncementId] = useState<string | null>(null);
-
-  // Form state
-  const [formData, setFormData] = useState({
-    title: '',
-    content: '',
-    author: 'Admin',
-    isPinned: false,
-  });
-  const [submitting, setSubmitting] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ title: '', content: '' });
 
   useEffect(() => {
-    fetchAnnouncements();
+    api.get('/announcements').then(r => { setAnnouncements(r.data); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
-  // Auto-open create modal if action=create
-  useEffect(() => {
-    const action = searchParams.get('action');
-    if (action === 'create') {
-      setShowCreateModal(true);
-      // Remove query param from URL after opening
-      if (typeof window !== 'undefined') {
-        const url = new URL(window.location.href);
-        url.searchParams.delete('action');
-        router.replace(url.pathname + url.search, { scroll: false });
-      }
-    }
-  }, [searchParams, router]);
-
-  const fetchAnnouncements = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get('/announcements');
-      // Backend already sorts by isPinned: desc, but we'll ensure pinned items are at top
-      const sorted = response.data.sort((a: Announcement, b: Announcement) => {
-        if (a.isPinned && !b.isPinned) return -1;
-        if (!a.isPinned && b.isPinned) return 1;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      });
-      setAnnouncements(sorted);
-    } catch (error: any) {
-      console.error('Error fetching announcements:', error);
-      alert('Failed to load announcements. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCreateAnnouncement = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitting(true);
-
     try {
-      await api.post('/announcements', {
-        title: formData.title,
-        content: formData.content,
-        author: formData.author || 'Admin',
-        isPinned: formData.isPinned,
-      });
-
-      // Reset form and close modal
-      setFormData({
-        title: '',
-        content: '',
-        author: 'Admin',
-        isPinned: false,
-      });
-      setShowCreateModal(false);
-
-      // Refresh announcements list
-      fetchAnnouncements();
-    } catch (error: any) {
-      console.error('Error creating announcement:', error);
-      alert(error.response?.data?.message || 'Failed to create announcement. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
+      const r = await api.post('/announcements', form);
+      setAnnouncements(prev => [r.data, ...prev]);
+      setShowForm(false);
+      setForm({ title: '', content: '' });
+    } catch {}
   };
 
-  const handlePinToggle = async (announcementId: string) => {
-    setPinningAnnouncementId(announcementId);
+  const handlePin = async (id: string, isPinned: boolean) => {
     try {
-      await api.patch(`/announcements/${announcementId}/pin`);
-      // Refresh list to reflect pin changes
-      fetchAnnouncements();
-    } catch (error: any) {
-      console.error('Error toggling pin:', error);
-      alert(error.response?.data?.message || 'Failed to toggle pin. Please try again.');
-    } finally {
-      setPinningAnnouncementId(null);
-    }
+      await api.patch(`/announcements/${id}`, { isPinned: !isPinned });
+      setAnnouncements(prev => prev.map(a => a.id === id ? { ...a, isPinned: !isPinned } : a));
+    } catch {}
   };
 
-  const handleDeleteAnnouncement = async (announcementId: string, announcementTitle: string) => {
-    if (!confirm(`Are you sure you want to delete "${announcementTitle}"? This action cannot be undone.`)) {
-      return;
-    }
-
-    setDeletingAnnouncementId(announcementId);
-    try {
-      await api.delete(`/announcements/${announcementId}`);
-      fetchAnnouncements(); // Refresh list
-    } catch (error: any) {
-      console.error('Error deleting announcement:', error);
-      alert(error.response?.data?.message || 'Failed to delete announcement. Please try again.');
-    } finally {
-      setDeletingAnnouncementId(null);
-    }
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this announcement?')) return;
+    try { await api.delete(`/announcements/${id}`); setAnnouncements(prev => prev.filter(a => a.id !== id)); } catch {}
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  };
-
-  const formatRelativeTime = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - date.getTime());
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    const diffHours = Math.floor(diffTime / (1000 * 60 * 60));
-    const diffMinutes = Math.floor(diffTime / (1000 * 60));
-
-    if (diffMinutes < 60) {
-      return `${diffMinutes}m ago`;
-    } else if (diffHours < 24) {
-      return `${diffHours}h ago`;
-    } else if (diffDays === 1) {
-      return '1d ago';
-    } else {
-      return `${diffDays}d ago`;
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading announcements...</p>
-        </div>
-      </div>
-    );
-  }
+  const pinned = announcements.filter(a => a.isPinned);
+  const regular = announcements.filter(a => !a.isPinned);
 
   return (
-    <div>
-      {/* Header Section */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="p-6 md:p-8 max-w-4xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Announcements</h1>
-          <p className="text-gray-600">Create and manage church announcements</p>
+          <h1 className="font-serif text-3xl text-primary-theme mb-1">Announcements</h1>
+          <p className="text-muted-theme text-sm">Create and manage church announcements</p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          New Announcement
+        <button onClick={() => setShowForm(!showForm)} className="btn-gold flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-sans">
+          <Plus className="w-4 h-4" /> New Announcement
         </button>
       </div>
 
-      {/* Announcements List */}
-      {announcements.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-md border border-gray-200 p-12 text-center">
-          <Megaphone className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No announcements yet</h3>
-          <p className="text-gray-600 mb-4">Get started by creating your first announcement.</p>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            New Announcement
-          </button>
+      {/* Create Form */}
+      {showForm && (
+        <div className="card-theme p-6 mb-8 rounded-xl border border-accent/30">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-serif text-xl text-primary-theme">New Announcement</h2>
+            <button onClick={() => setShowForm(false)} className="text-muted-theme hover:text-primary-theme"><X className="w-5 h-5" /></button>
+          </div>
+          <form onSubmit={handleCreate} className="space-y-4">
+            <div>
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Title *</label>
+              <input required value={form.title} onChange={e => setForm(p => ({...p, title: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm" placeholder="Announcement title..." />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Message *</label>
+              <textarea required value={form.content} onChange={e => setForm(p => ({...p, content: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm resize-none" rows={4} placeholder="Write your announcement..." />
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-muted-theme hover:text-primary-theme transition-colors">Cancel</button>
+              <button type="submit" className="btn-gold px-6 py-2 rounded-lg text-sm font-sans">Post Announcement</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center h-40 text-muted-theme">Loading announcements...</div>
+      ) : announcements.length === 0 ? (
+        <div className="card-theme rounded-xl p-12 text-center">
+          <Megaphone className="w-12 h-12 text-muted-theme mx-auto mb-3" />
+          <p className="text-muted-theme">No announcements yet. Create your first one above.</p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {announcements.map((announcement) => {
-            const isDeleting = deletingAnnouncementId === announcement.id;
-            const isPinning = pinningAnnouncementId === announcement.id;
-
-            return (
-              <div
-                key={announcement.id}
-                className={`bg-white rounded-lg shadow-md border-2 p-6 hover:shadow-lg transition-shadow ${
-                  announcement.isPinned
-                    ? 'border-yellow-400 bg-yellow-50'
-                    : 'border-gray-200'
-                }`}
-              >
-                {/* Header with Pin Badge and Actions */}
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-xl font-semibold text-gray-900">{announcement.title}</h3>
-                      {announcement.isPinned && (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-yellow-400 text-yellow-900 text-xs font-semibold rounded-full">
-                          📌 PINNED
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-4 text-sm text-gray-500">
-                      <span>By {announcement.author}</span>
-                      <span>•</span>
-                      <span>{formatRelativeTime(announcement.createdAt)}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 ml-4">
-                    {/* Pin Toggle Button */}
-                    <button
-                      onClick={() => handlePinToggle(announcement.id)}
-                      disabled={isPinning}
-                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 ${
-                        announcement.isPinned
-                          ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                      title={announcement.isPinned ? 'Unpin from top' : 'Pin to top'}
-                    >
-                      {isPinning ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Pin className={`w-4 h-4 ${announcement.isPinned ? 'fill-current' : ''}`} />
-                      )}
-                      {announcement.isPinned ? 'Unpin' : 'Pin'}
-                    </button>
-                    {/* Delete Button */}
-                    <button
-                      onClick={() => handleDeleteAnnouncement(announcement.id, announcement.title)}
-                      disabled={isDeleting}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      aria-label="Delete announcement"
-                    >
-                      {isDeleting ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-5 h-5" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Content */}
-                <div className="prose max-w-none">
-                  <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
-                    {announcement.content}
-                  </p>
-                </div>
-
-                {/* Footer */}
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <p className="text-xs text-gray-500">
-                    Posted {formatDate(announcement.createdAt)}
-                  </p>
-                </div>
+        <div className="space-y-8">
+          {/* Pinned */}
+          {pinned.length > 0 && (
+            <div>
+              <div className="flex items-center gap-3 mb-4">
+                <Pin className="w-4 h-4 text-accent" />
+                <span className="text-xs uppercase tracking-[0.2em] text-accent font-semibold">Pinned</span>
+                <div className="flex-1 h-px bg-border-theme" />
               </div>
-            );
-          })}
+              <div className="space-y-3">
+                {pinned.map(a => <AnnouncementCard key={a.id} a={a} onPin={handlePin} onDelete={handleDelete} />)}
+              </div>
+            </div>
+          )}
+          {/* Regular */}
+          {regular.length > 0 && (
+            <div>
+              {pinned.length > 0 && (
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-xs uppercase tracking-[0.2em] text-muted-theme font-semibold">All Announcements</span>
+                  <div className="flex-1 h-px bg-border-theme" />
+                </div>
+              )}
+              <div className="space-y-3">
+                {regular.map(a => <AnnouncementCard key={a.id} a={a} onPin={handlePin} onDelete={handleDelete} />)}
+              </div>
+            </div>
+          )}
         </div>
       )}
+    </div>
+  );
+}
 
-      {/* Create Announcement Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
-            onClick={() => !submitting && setShowCreateModal(false)}
-          ></div>
+function AnnouncementCard({ a, onPin, onDelete }: { a: any; onPin: (id: string, pinned: boolean) => void; onDelete: (id: string) => void }) {
+  const timeAgo = (date: string) => {
+    const diff = Date.now() - new Date(date).getTime();
+    const days = Math.floor(diff / 86400000);
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    return `${days}d ago`;
+  };
 
-          {/* Modal */}
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              {/* Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-200">
-                <h2 className="text-2xl font-bold text-gray-900">Create New Announcement</h2>
-                <button
-                  onClick={() => !submitting && setShowCreateModal(false)}
-                  disabled={submitting}
-                  className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-
-              {/* Form */}
-              <form onSubmit={handleCreateAnnouncement} className="p-6 space-y-4">
-                <div>
-                  <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
-                    Title <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="title"
-                    required
-                    value={formData.title}
-                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="e.g., Volunteer Appreciation Dinner"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="content" className="block text-sm font-medium text-gray-700 mb-1">
-                    Content <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    id="content"
-                    rows={6}
-                    required
-                    value={formData.content}
-                    onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
-                    placeholder="Enter announcement content..."
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Supports multiple lines and formatting
-                  </p>
-                </div>
-
-                <div>
-                  <label htmlFor="author" className="block text-sm font-medium text-gray-700 mb-1">
-                    Author Name
-                  </label>
-                  <input
-                    type="text"
-                    id="author"
-                    value={formData.author}
-                    onChange={(e) => setFormData({ ...formData, author: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Admin"
-                  />
-                </div>
-
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="isPinned"
-                    checked={formData.isPinned}
-                    onChange={(e) => setFormData({ ...formData, isPinned: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                  />
-                  <label htmlFor="isPinned" className="ml-2 text-sm font-medium text-gray-700">
-                    Pin immediately?
-                  </label>
-                  <p className="ml-2 text-xs text-gray-500">
-                    (Will unpin any currently pinned announcement)
-                  </p>
-                </div>
-
-                {/* Footer */}
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
-                  <button
-                    type="button"
-                    onClick={() => setShowCreateModal(false)}
-                    disabled={submitting}
-                    className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Create Announcement
-                  </button>
-                </div>
-              </form>
-            </div>
+  return (
+    <div className={`card-theme rounded-xl border overflow-hidden ${a.isPinned ? 'border-accent/30' : 'border-border-theme'}`}>
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-4 mb-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="font-serif text-lg text-primary-theme">{a.title}</h3>
+            {a.isPinned && (
+              <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent border border-accent/30">
+                <Pin className="w-3 h-3" /> Pinned
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button onClick={() => onPin(a.id, a.isPinned)} className={`p-2 transition-colors ${a.isPinned ? 'text-accent hover:text-muted-theme' : 'text-muted-theme hover:text-accent'}`} title={a.isPinned ? 'Unpin' : 'Pin'}>
+              {a.isPinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+            </button>
+            <button onClick={() => onDelete(a.id)} className="p-2 text-muted-theme hover:text-red-400 transition-colors">
+              <Trash2 className="w-4 h-4" />
+            </button>
           </div>
         </div>
-      )}
+        <p className="text-sm text-muted-theme leading-relaxed mb-3">{a.content}</p>
+        <div className="flex items-center gap-2 text-xs text-muted-theme">
+          <span>By {a.author ? `${a.author.firstName} ${a.author.lastName}` : 'Admin'}</span>
+          <span>•</span>
+          <span>{timeAgo(a.createdAt)}</span>
+          <span>•</span>
+          <span>{new Date(a.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+      </div>
     </div>
   );
 }

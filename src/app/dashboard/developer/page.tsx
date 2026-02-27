@@ -1,262 +1,152 @@
 'use client';
-
-import { useEffect, useMemo, useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Code2, Bug, Lightbulb, CheckCircle, Clock, Loader2, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import api from '@/utils/api';
-import { Bug, Lightbulb, RefreshCw, Trash2 } from 'lucide-react';
 
-type TicketStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED';
-
-interface SupportTicket {
+interface Ticket {
   id: string;
-  type: 'BUG' | 'FEATURE';
-  message: string;
-  status: TicketStatus;
+  type: string;
+  description: string;
+  status: string;
   createdAt: string;
-  user?: {
-    id: string;
-    firstName?: string;
-    lastName?: string;
-    email?: string;
-    avatarUrl?: string | null;
-  } | null;
+  user?: { firstName: string; lastName: string; email: string };
 }
 
-const STATUS_TABS: { key: TicketStatus | 'ALL'; label: string }[] = [
-  { key: 'OPEN', label: 'Open' },
-  { key: 'IN_PROGRESS', label: 'In Progress' },
-  { key: 'RESOLVED', label: 'Resolved' },
-];
-
 export default function DeveloperPage() {
-  const [tickets, setTickets] = useState<SupportTicket[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TicketStatus | 'ALL'>('OPEN');
-
-  const fetchTickets = async () => {
-    try {
-      setLoading(true);
-      const res = await api.get<SupportTicket[]>('/support');
-      setTickets(res.data || []);
-    } catch (err) {
-      console.error('Failed to load support tickets', err);
-      alert('Failed to load support tickets. Check backend logs.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('ALL');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchTickets();
+    api.get('/developer/tickets').then(r => { setTickets(r.data); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
-  const filteredTickets = useMemo(() => {
-    if (activeTab === 'ALL') return tickets;
-    return tickets.filter((t) => t.status === activeTab);
-  }, [tickets, activeTab]);
-
-  const handleStatusChange = async (ticket: SupportTicket, newStatus: TicketStatus) => {
-    if (ticket.status === newStatus) return;
+  const handleStatus = async (id: string, status: string) => {
     try {
-      setUpdatingId(ticket.id);
-      await api.patch(`/support/${ticket.id}`, { status: newStatus });
-      setTickets((prev) =>
-        prev.map((t) => (t.id === ticket.id ? { ...t, status: newStatus } : t)),
-      );
-    } catch (err) {
-      console.error('Failed to update ticket status', err);
-      alert('Failed to update status. Please try again.');
-    } finally {
-      setUpdatingId(null);
-    }
+      await api.patch(`/developer/tickets/${id}`, { status });
+      setTickets(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+    } catch {}
   };
 
-  const handleDelete = async (ticketId: string) => {
-    if (!confirm('Delete this ticket? This cannot be undone.')) return;
-    try {
-      setUpdatingId(ticketId);
-      await api.delete(`/support/${ticketId}`);
-      setTickets((prev) => prev.filter((t) => t.id !== ticketId));
-    } catch (err) {
-      console.error('Failed to delete ticket', err);
-      alert('Failed to delete ticket. Please try again.');
-    } finally {
-      setUpdatingId(null);
-    }
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this ticket?')) return;
+    try { await api.delete(`/developer/tickets/${id}`); setTickets(prev => prev.filter(t => t.id !== id)); } catch {}
   };
 
-  const formatDate = (iso: string) => {
-    try {
-      return new Date(iso).toLocaleString();
-    } catch {
-      return iso;
-    }
+  const filtered = filter === 'ALL' ? tickets : tickets.filter(t => t.status === filter);
+  const counts = {
+    ALL: tickets.length,
+    OPEN: tickets.filter(t => t.status === 'OPEN').length,
+    IN_PROGRESS: tickets.filter(t => t.status === 'IN_PROGRESS').length,
+    RESOLVED: tickets.filter(t => t.status === 'RESOLVED').length,
   };
 
-  const getUserInitials = (ticket: SupportTicket) => {
-    const u = ticket.user;
-    if (!u) return '?';
-    const first = u.firstName?.[0] ?? '';
-    const last = u.lastName?.[0] ?? '';
-    const initials = (first + last).toUpperCase();
-    if (initials) return initials;
-    return u.email?.[0]?.toUpperCase() ?? '?';
+  const typeConfig: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
+    BUG: { label: 'Bug', icon: <Bug className="w-3.5 h-3.5" />, color: 'bg-red-500/20 text-red-400 border-red-500/30' },
+    FEATURE: { label: 'Feature', icon: <Lightbulb className="w-3.5 h-3.5" />, color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
+    OTHER: { label: 'Other', icon: <Code2 className="w-3.5 h-3.5" />, color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
   };
 
-  const getUserName = (ticket: SupportTicket) => {
-    const u = ticket.user;
-    if (!u) return 'Unknown User';
-    if (u.firstName || u.lastName) {
-      return `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim();
-    }
-    return u.email ?? 'Unknown User';
-  };
-
-  const getTypeStyles = (type: SupportTicket['type']) => {
-    if (type === 'BUG') {
-      return {
-        pill: 'bg-red-100 text-red-700',
-        icon: <Bug className="w-4 h-4 text-red-600" />,
-      };
-    }
-    return {
-      pill: 'bg-blue-100 text-blue-700',
-      icon: <Lightbulb className="w-4 h-4 text-blue-600" />,
-    };
+  const statusConfig: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
+    OPEN: { label: 'Open', icon: <Clock className="w-3 h-3" />, color: 'bg-yellow-500/20 text-yellow-400' },
+    IN_PROGRESS: { label: 'In Progress', icon: <Loader2 className="w-3 h-3" />, color: 'bg-blue-500/20 text-blue-400' },
+    RESOLVED: { label: 'Resolved', icon: <CheckCircle className="w-3 h-3" />, color: 'bg-green-500/20 text-green-400' },
   };
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Developer Requests</h1>
-          <p className="text-gray-500 mt-1">
-            Review support tickets submitted from the mobile app.
-          </p>
-        </div>
-        <button
-          onClick={fetchTickets}
-          className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Refresh
-        </button>
+    <div className="p-6 md:p-8 max-w-4xl mx-auto">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="font-serif text-3xl text-primary-theme mb-1">Developer Requests</h1>
+        <p className="text-muted-theme text-sm">Review support tickets submitted from the mobile app</p>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        {[
+          { label: 'Total', value: counts.ALL, color: 'text-primary-theme' },
+          { label: 'Open', value: counts.OPEN, color: 'text-yellow-400' },
+          { label: 'In Progress', value: counts.IN_PROGRESS, color: 'text-blue-400' },
+          { label: 'Resolved', value: counts.RESOLVED, color: 'text-green-400' },
+        ].map(s => (
+          <div key={s.label} className="card-theme rounded-xl p-4 border border-border-theme text-center">
+            <div className={`font-serif text-3xl ${s.color} mb-1`}>{s.value}</div>
+            <div className="text-xs text-muted-theme uppercase tracking-widest">{s.label}</div>
+          </div>
+        ))}
       </div>
 
       {/* Filter Tabs */}
-      <div className="mb-4 flex gap-2 border-b border-gray-200">
-        {STATUS_TABS.map((tab) => {
-          const isActive = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                isActive
-                  ? 'border-blue-600 text-blue-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-200'
-              }`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
+      <div className="flex flex-wrap gap-2 mb-6">
+        {(['ALL', 'OPEN', 'IN_PROGRESS', 'RESOLVED'] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)} className={`px-4 py-2 rounded-lg text-sm font-sans transition-colors ${filter === f ? 'bg-accent text-black' : 'bg-card-theme text-muted-theme hover:text-primary-theme border border-border-theme'}`}>
+            {f === 'ALL' ? 'All' : f === 'IN_PROGRESS' ? 'In Progress' : f.charAt(0) + f.slice(1).toLowerCase()} ({counts[f] ?? tickets.length})
+          </button>
+        ))}
       </div>
 
-      {/* Tickets List */}
-      <div className="space-y-3">
-        {loading && (
-          <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-500">
-            Loading tickets...
-          </div>
-        )}
-
-        {!loading && filteredTickets.length === 0 && (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-sm text-gray-500">
-            No tickets in this view.
-          </div>
-        )}
-
-        {!loading &&
-          filteredTickets.map((ticket) => {
-            const typeStyles = getTypeStyles(ticket.type);
+      {/* Tickets */}
+      {loading ? (
+        <div className="flex items-center justify-center h-40 text-muted-theme">Loading tickets...</div>
+      ) : filtered.length === 0 ? (
+        <div className="card-theme rounded-xl p-12 text-center">
+          <Code2 className="w-12 h-12 text-muted-theme mx-auto mb-3" />
+          <p className="text-muted-theme">No tickets found.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(ticket => {
+            const tc = typeConfig[ticket.type] || typeConfig.OTHER;
+            const sc = statusConfig[ticket.status] || statusConfig.OPEN;
+            const isExpanded = expandedId === ticket.id;
+            const initials = `${ticket.user?.firstName?.[0] ?? ''}${ticket.user?.lastName?.[0] ?? ''}`.toUpperCase();
             return (
-              <div
-                key={ticket.id}
-                className="rounded-xl border border-gray-200 bg-white p-4 flex gap-4"
-              >
-                {/* User Avatar */}
-                <div className="flex-shrink-0">
-                  <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-700">
-                    {getUserInitials(ticket)}
+              <div key={ticket.id} className="card-theme rounded-xl border border-border-theme overflow-hidden">
+                <div className="flex items-start gap-4 p-5">
+                  {/* Avatar */}
+                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center">
+                    <span className="text-accent text-sm font-semibold">{initials || '?'}</span>
                   </div>
-                </div>
-
-                {/* Main Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {getUserName(ticket)}
-                      </p>
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${typeStyles.pill}`}
-                      >
-                        {typeStyles.icon}
-                        {ticket.type}
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <span className="text-sm font-medium text-primary-theme">
+                        {ticket.user ? `${ticket.user.firstName} ${ticket.user.lastName}` : 'Unknown User'}
                       </span>
+                      <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${tc.color}`}>{tc.icon}{tc.label}</span>
+                      <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${sc.color}`}>{sc.icon}{sc.label}</span>
                     </div>
-                    <p className="text-xs text-gray-400 flex-shrink-0">
-                      {formatDate(ticket.createdAt)}
-                    </p>
+                    <p className={`text-sm text-muted-theme ${isExpanded ? '' : 'line-clamp-2'}`}>{ticket.description}</p>
+                    <span className="text-xs text-muted-theme mt-1 block">{new Date(ticket.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
-
-                  <p className="text-sm text-gray-700 whitespace-pre-line mb-3">
-                    {ticket.message}
-                  </p>
-
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs font-medium text-gray-500">
-                        Status:
-                      </label>
-                      <select
-                        value={ticket.status}
-                        disabled={updatingId === ticket.id}
-                        onChange={(e) =>
-                          handleStatusChange(
-                            ticket,
-                            e.target.value as TicketStatus,
-                          )
-                        }
-                        className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      >
-                        <option value="OPEN">Open</option>
-                        <option value="IN_PROGRESS">In Progress</option>
-                        <option value="RESOLVED">Resolved</option>
-                      </select>
-                    </div>
-
-                    <button
-                      onClick={() => handleDelete(ticket.id)}
-                      disabled={updatingId === ticket.id}
-                      className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-100 disabled:opacity-60"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      Delete
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button onClick={() => setExpandedId(isExpanded ? null : ticket.id)} className="p-2 text-muted-theme hover:text-primary-theme transition-colors">
+                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                    <button onClick={() => handleDelete(ticket.id)} className="p-2 text-muted-theme hover:text-red-400 transition-colors">
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
+                {isExpanded && (
+                  <div className="border-t border-border-theme px-5 py-3 bg-surface-theme">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-muted-theme uppercase tracking-widest mr-2">Update Status:</span>
+                      {(['OPEN', 'IN_PROGRESS', 'RESOLVED'] as const).map(s => (
+                        <button key={s} onClick={() => handleStatus(ticket.id, s)} className={`px-3 py-1 rounded-lg text-xs transition-colors border ${ticket.status === s ? statusConfig[s].color + ' border-current' : 'text-muted-theme border-border-theme hover:border-accent hover:text-accent'}`}>
+                          {s === 'IN_PROGRESS' ? 'In Progress' : s.charAt(0) + s.slice(1).toLowerCase()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
-      </div>
-
-      {/* Sidebar note */}
-      <p className="mt-8 text-xs text-gray-400">
-        Note: Add a link to this page in the main dashboard sidebar for quick access
-        (e.g., &quot;Developer&quot; under Settings).
-      </p>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,476 +1,165 @@
 'use client';
+import { useState, useEffect } from 'react';
+import { User, Lock, Camera, Save, CheckCircle } from 'lucide-react';
+import api from '@/utils/api';
 
-import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import api, { API_URL } from '@/utils/api';
-
-interface User {
-  id: string;
+interface Profile {
   firstName: string;
   lastName: string;
   email: string;
-  avatarUrl?: string;
-}
-
-interface NotificationRules {
-  announcements: boolean;
-  sermons: boolean;
-  chat: boolean;
+  phone?: string;
+  bio?: string;
+  profileImageUrl?: string;
+  role?: string;
 }
 
 export default function SettingsPage() {
-  const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
+  const [profile, setProfile] = useState<Profile>({ firstName: '', lastName: '', email: '', phone: '', bio: '' });
   const [loading, setLoading] = useState(true);
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [savingRules, setSavingRules] = useState(false);
-  const [savingConfig, setSavingConfig] = useState(false);
-  
-  const [user, setUser] = useState<User | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [profileData, setProfileData] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-  });
-  
-  const [notificationRules, setNotificationRules] = useState<NotificationRules>({
-    announcements: true,
-    sermons: false,
-    chat: false,
-  });
-  
-  const [appConfig, setAppConfig] = useState({
-    churchName: 'New Birth Praise and Worship Center',
-    websiteUrl: '',
-  });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [tab, setTab] = useState<'profile' | 'security'>('profile');
+  const [passwords, setPasswords] = useState({ current: '', newPass: '', confirm: '' });
+  const [pwError, setPwError] = useState('');
+  const [pwSaved, setPwSaved] = useState(false);
 
   useEffect(() => {
-    fetchData();
+    api.get('/auth/me').then(r => { setProfile(r.data); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
-  const fetchData = async () => {
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
     try {
-      setLoading(true);
-      
-      // Get user ID from localStorage
-      if (typeof window !== 'undefined') {
-        const userStr = localStorage.getItem('user');
-        if (userStr) {
-          try {
-            const userObj = JSON.parse(userStr);
-            setUserId(userObj.id);
-            
-            // Fetch user profile
-            const userResponse = await api.get(`/users/${userObj.id}`);
-            const userData: User = userResponse.data;
-            setUser(userData);
-            setProfileData({
-              firstName: userData.firstName || '',
-              lastName: userData.lastName || '',
-              email: userData.email || '',
-            });
-          } catch (error) {
-            console.error('Error parsing user data:', error);
-          }
-        }
-      }
-
-      // Fetch notification rules
-      try {
-        const rulesResponse = await api.get('/system-settings/notification_rules');
-        if (rulesResponse.data && rulesResponse.data.value) {
-          setNotificationRules(rulesResponse.data.value);
-        }
-      } catch (error: any) {
-        console.error('Error fetching notification rules:', error);
-        // Default values if 404
-        if (error.response?.status === 404) {
-          setNotificationRules({
-            announcements: true,
-            sermons: false,
-            chat: false,
-          });
-        }
-      }
-    } catch (error: any) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
-    }
+      await api.patch('/users/me', { firstName: profile.firstName, lastName: profile.lastName, phone: profile.phone, bio: profile.bio });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch {}
+    setSaving(false);
   };
 
-  const handleAvatarClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !userId) return;
-
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwError('');
+    if (passwords.newPass !== passwords.confirm) { setPwError('New passwords do not match.'); return; }
+    if (passwords.newPass.length < 8) { setPwError('Password must be at least 8 characters.'); return; }
     try {
-      setSavingProfile(true);
-      
-      // Upload file
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      const uploadResponse = await api.post('/users/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-
-      const avatarUrl = `${API_URL}${uploadResponse.data.url}`;
-
-      // Update user with new avatar URL
-      await api.patch(`/users/${userId}`, { avatarUrl });
-
-      // Update local state
-      if (user) {
-        const updatedUser = { ...user, avatarUrl };
-        setUser(updatedUser);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('user', JSON.stringify(updatedUser));
-        }
-      }
-
-      showToast('Avatar updated successfully');
-    } catch (error: any) {
-      console.error('Error uploading avatar:', error);
-      showToast('Failed to update avatar', 'error');
-    } finally {
-      setSavingProfile(false);
-    }
+      await api.patch('/auth/change-password', { currentPassword: passwords.current, newPassword: passwords.newPass });
+      setPwSaved(true);
+      setPasswords({ current: '', newPass: '', confirm: '' });
+      setTimeout(() => setPwSaved(false), 3000);
+    } catch { setPwError('Current password is incorrect.'); }
   };
 
-  const handleSaveProfile = async () => {
-    if (!userId) return;
-
-    try {
-      setSavingProfile(true);
-      await api.patch(`/users/${userId}`, profileData);
-      
-      // Update local state
-      if (user) {
-        const updatedUser = { ...user, ...profileData };
-        setUser(updatedUser);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('user', JSON.stringify(updatedUser));
-        }
-      }
-
-      showToast('Profile saved successfully');
-    } catch (error: any) {
-      console.error('Error saving profile:', error);
-      showToast('Failed to save profile', 'error');
-    } finally {
-      setSavingProfile(false);
-    }
-  };
-
-  const handleToggleRule = async (key: keyof NotificationRules) => {
-    const newRules = {
-      ...notificationRules,
-      [key]: !notificationRules[key],
-    };
-
-    // Optimistic update
-    setNotificationRules(newRules);
-    setSavingRules(true);
-
-    try {
-      await api.patch('/system-settings/notification_rules', {
-        value: newRules,
-      });
-
-      showToast('Notification rules updated successfully');
-    } catch (error: any) {
-      console.error('Error updating notification rules:', error);
-      // Revert on error
-      setNotificationRules(notificationRules);
-      showToast('Failed to update notification rules', 'error');
-    } finally {
-      setSavingRules(false);
-    }
-  };
-
-  const handleSaveConfig = async () => {
-    try {
-      setSavingConfig(true);
-      // For now, just save to localStorage (visual only)
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('appConfig', JSON.stringify(appConfig));
-      }
-      showToast('Configuration saved successfully');
-    } catch (error: any) {
-      console.error('Error saving config:', error);
-      showToast('Failed to save configuration', 'error');
-    } finally {
-      setSavingConfig(false);
-    }
-  };
-
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    // Simple toast implementation
-    const toast = document.createElement('div');
-    toast.className = `fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 ${
-      type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
-    }`;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-
-    setTimeout(() => {
-      toast.remove();
-    }, 3000);
-  };
-
-  const getInitials = () => {
-    if (profileData.firstName && profileData.lastName) {
-      return `${profileData.firstName[0]}${profileData.lastName[0]}`.toUpperCase();
-    }
-    if (profileData.firstName) {
-      return profileData.firstName[0].toUpperCase();
-    }
-    return 'A';
-  };
-
-  const getAvatarUrl = (avatarUrl?: string) => {
-    if (!avatarUrl) return null;
-    if (avatarUrl.startsWith('http')) return avatarUrl;
-    return `${API_URL}${avatarUrl}`;
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading settings...</p>
-        </div>
-      </div>
-    );
-  }
+  const initials = `${profile.firstName?.[0] ?? ''}${profile.lastName?.[0] ?? ''}`.toUpperCase();
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <h1 className="text-3xl font-bold text-gray-900 mb-8">Settings</h1>
+    <div className="p-6 md:p-8 max-w-3xl mx-auto">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="font-serif text-3xl text-primary-theme mb-1">Settings</h1>
+        <p className="text-muted-theme text-sm">Manage your admin profile and account security</p>
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Section A: My Profile */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-6">My Profile</h2>
+      {/* Tabs */}
+      <div className="flex gap-2 mb-8">
+        <button onClick={() => setTab('profile')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-sans transition-colors ${tab === 'profile' ? 'bg-accent text-black' : 'bg-card-theme text-muted-theme hover:text-primary-theme border border-border-theme'}`}>
+          <User className="w-4 h-4" /> My Profile
+        </button>
+        <button onClick={() => setTab('security')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-sans transition-colors ${tab === 'security' ? 'bg-accent text-black' : 'bg-card-theme text-muted-theme hover:text-primary-theme border border-border-theme'}`}>
+          <Lock className="w-4 h-4" /> Security
+        </button>
+      </div>
 
-          {/* Avatar */}
-          <div className="flex justify-center mb-6">
-            <button
-              onClick={handleAvatarClick}
-              disabled={savingProfile}
-              className="relative group cursor-pointer">
-              {getAvatarUrl(user?.avatarUrl) ? (
-                <img
-                  src={getAvatarUrl(user?.avatarUrl)!}
-                  alt="Profile"
-                  className="w-32 h-32 rounded-full object-cover border-4 border-gray-200 group-hover:border-blue-500 transition-colors"
-                  onError={(e) => {
-                    // Fallback to initials on error
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              ) : (
-                <div className="w-32 h-32 rounded-full bg-blue-600 flex items-center justify-center text-white text-4xl font-semibold border-4 border-gray-200 group-hover:border-blue-500 transition-colors">
-                  {getInitials()}
+      {tab === 'profile' ? (
+        <div className="card-theme rounded-xl border border-border-theme overflow-hidden">
+          {/* Avatar Section */}
+          <div className="p-6 border-b border-border-theme bg-surface-theme">
+            <div className="flex items-center gap-5">
+              <div className="relative flex-shrink-0">
+                <div className="w-20 h-20 rounded-full bg-accent/10 border-2 border-accent/30 flex items-center justify-center overflow-hidden">
+                  {profile.profileImageUrl ? (
+                    <img src={profile.profileImageUrl} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="font-serif text-2xl text-accent">{initials || '?'}</span>
+                  )}
                 </div>
-              )}
-              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-full flex items-center justify-center transition-opacity">
-                <span className="text-white text-sm opacity-0 group-hover:opacity-100 transition-opacity">
-                  Change
-                </span>
+                <button className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-accent flex items-center justify-center shadow-lg">
+                  <Camera className="w-3.5 h-3.5 text-black" />
+                </button>
               </div>
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleAvatarChange}
-              className="hidden"
-            />
+              <div>
+                <h2 className="font-serif text-xl text-primary-theme">{profile.firstName} {profile.lastName}</h2>
+                <p className="text-muted-theme text-sm">{profile.email}</p>
+                {profile.role && <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent border border-accent/30">{profile.role}</span>}
+              </div>
+            </div>
           </div>
 
           {/* Profile Form */}
-          <div className="space-y-4">
+          <form onSubmit={handleSave} className="p-6 space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">First Name</label>
+                <input value={profile.firstName} onChange={e => setProfile(p => ({...p, firstName: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Last Name</label>
+                <input value={profile.lastName} onChange={e => setProfile(p => ({...p, lastName: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm" />
+              </div>
+            </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                First Name
-              </label>
-              <input
-                type="text"
-                value={profileData.firstName}
-                onChange={(e) =>
-                  setProfileData({ ...profileData, firstName: e.target.value })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Email Address</label>
+              <input value={profile.email} disabled className="input-theme w-full rounded-lg px-4 py-2.5 text-sm opacity-50 cursor-not-allowed" />
+              <p className="text-xs text-muted-theme mt-1">Email cannot be changed here. Contact support if needed.</p>
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Last Name
-              </label>
-              <input
-                type="text"
-                value={profileData.lastName}
-                onChange={(e) =>
-                  setProfileData({ ...profileData, lastName: e.target.value })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Phone Number</label>
+              <input value={profile.phone ?? ''} onChange={e => setProfile(p => ({...p, phone: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm" placeholder="(317) 000-0000" />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email
-              </label>
-              <input
-                type="email"
-                value={profileData.email}
-                onChange={(e) =>
-                  setProfileData({ ...profileData, email: e.target.value })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Bio</label>
+              <textarea value={profile.bio ?? ''} onChange={e => setProfile(p => ({...p, bio: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm resize-none" rows={3} placeholder="A short bio..." />
             </div>
-
-            <button
-              onClick={handleSaveProfile}
-              disabled={savingProfile}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors font-medium">
-              {savingProfile ? 'Saving...' : 'Save Profile'}
-            </button>
-          </div>
+            <div className="flex items-center justify-between pt-2">
+              {saved && (
+                <span className="flex items-center gap-1.5 text-sm text-green-400">
+                  <CheckCircle className="w-4 h-4" /> Profile saved successfully
+                </span>
+              )}
+              <button type="submit" disabled={saving} className="btn-gold flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-sans ml-auto">
+                <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </form>
         </div>
-
-        {/* Section B: Notification Rules */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">
-            Notification Rules
-          </h2>
-          <p className="text-sm text-gray-600 mb-6">
-            Control which notifications are mandatory for all members.
-          </p>
-
-          <div className="space-y-4">
-            {/* Force Announcement Alerts */}
-            <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-              <div className="flex-1">
-                <label className="text-sm font-medium text-gray-900">
-                  Force Announcement Alerts
-                </label>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={notificationRules.announcements}
-                  onChange={() => handleToggleRule('announcements')}
-                  disabled={savingRules}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-disabled:opacity-50"></div>
-              </label>
+      ) : (
+        <div className="card-theme rounded-xl border border-border-theme p-6">
+          <h2 className="font-serif text-xl text-primary-theme mb-1">Change Password</h2>
+          <p className="text-muted-theme text-sm mb-6">Choose a strong password of at least 8 characters.</p>
+          <form onSubmit={handlePasswordChange} className="space-y-4">
+            <div>
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Current Password</label>
+              <input type="password" required value={passwords.current} onChange={e => setPasswords(p => ({...p, current: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm" />
             </div>
-
-            {/* Force Sermon Alerts */}
-            <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-              <div className="flex-1">
-                <label className="text-sm font-medium text-gray-900">
-                  Force Sermon Alerts
-                </label>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={notificationRules.sermons}
-                  onChange={() => handleToggleRule('sermons')}
-                  disabled={savingRules}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-disabled:opacity-50"></div>
-              </label>
+            <div>
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">New Password</label>
+              <input type="password" required value={passwords.newPass} onChange={e => setPasswords(p => ({...p, newPass: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm" />
             </div>
-
-            {/* Force Chat Alerts */}
-            <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-              <div className="flex-1">
-                <label className="text-sm font-medium text-gray-900">
-                  Force Chat Alerts
-                </label>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={notificationRules.chat}
-                  onChange={() => handleToggleRule('chat')}
-                  disabled={savingRules}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-disabled:opacity-50"></div>
-              </label>
+            <div>
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Confirm New Password</label>
+              <input type="password" required value={passwords.confirm} onChange={e => setPasswords(p => ({...p, confirm: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm" />
             </div>
-
-            {savingRules && (
-              <div className="text-center text-sm text-gray-500">
-                Saving...
-              </div>
-            )}
-          </div>
+            {pwError && <p className="text-sm text-red-400">{pwError}</p>}
+            {pwSaved && <p className="flex items-center gap-1.5 text-sm text-green-400"><CheckCircle className="w-4 h-4" /> Password updated successfully</p>}
+            <div className="flex justify-end pt-2">
+              <button type="submit" className="btn-gold flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-sans">
+                <Lock className="w-4 h-4" /> Update Password
+              </button>
+            </div>
+          </form>
         </div>
-      </div>
-
-      {/* Section C: App Configuration */}
-      <div className="mt-8 bg-white rounded-lg shadow p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-6">
-          App Configuration
-        </h2>
-
-        <div className="max-w-md space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Church Name
-            </label>
-            <input
-              type="text"
-              value={appConfig.churchName}
-              onChange={(e) =>
-                setAppConfig({ ...appConfig, churchName: e.target.value })
-              }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Website URL
-            </label>
-            <input
-              type="url"
-              value={appConfig.websiteUrl}
-              onChange={(e) =>
-                setAppConfig({ ...appConfig, websiteUrl: e.target.value })
-              }
-              placeholder="https://..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-
-          <button
-            onClick={handleSaveConfig}
-            disabled={savingConfig}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors font-medium">
-            {savingConfig ? 'Saving...' : 'Save Config'}
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

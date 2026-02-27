@@ -1,230 +1,133 @@
 'use client';
-
-import { useEffect, useState } from 'react';
-import api, { API_URL } from '@/utils/api';
-import { Trash2, Loader2, User as UserIcon, HandHeart, Heart } from 'lucide-react';
-
-interface User {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  avatarUrl?: string;
-}
+import { useState, useEffect } from 'react';
+import { Heart, CheckCircle, Clock, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import api from '@/utils/api';
 
 interface PrayerRequest {
   id: string;
-  content: string;
+  request: string;
   isAnonymous: boolean;
-  shareToWall: boolean;
-  userId?: string | null;
-  prayCount?: number;
+  status: string;
   createdAt: string;
-  user?: User | null;
+  user?: { firstName: string; lastName: string; email: string; profileImageUrl?: string };
 }
 
 export default function PrayerPage() {
-  const [prayerRequests, setPrayerRequests] = useState<PrayerRequest[]>([]);
+  const [requests, setRequests] = useState<PrayerRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [filter, setFilter] = useState('ALL');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchPrayerRequests();
+    api.get('/prayer').then(r => { setRequests(r.data); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
-  const fetchPrayerRequests = async () => {
+  const handleStatus = async (id: string, status: string) => {
     try {
-      setLoading(true);
-      const response = await api.get('/prayer-requests');
-      setPrayerRequests(response.data);
-    } catch (error: any) {
-      console.error('Error fetching prayer requests:', error);
-      alert('Failed to load prayer requests. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+      await api.patch(`/prayer/${id}`, { status });
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+    } catch {}
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this prayer request? This action cannot be undone.')) {
-      return;
-    }
-
-    setDeletingId(id);
-    try {
-      await api.delete(`/prayer-requests/${id}`);
-      // Refresh the list after deleting
-      fetchPrayerRequests();
-    } catch (error: any) {
-      console.error('Error deleting prayer request:', error);
-      alert(error.response?.data?.message || 'Failed to delete prayer request. Please try again.');
-    } finally {
-      setDeletingId(null);
-    }
+    if (!confirm('Delete this prayer request?')) return;
+    try { await api.delete(`/prayer/${id}`); setRequests(prev => prev.filter(r => r.id !== id)); } catch {}
   };
 
-  const getInitials = (firstName: string, lastName?: string) => {
-    const first = firstName ? firstName[0].toUpperCase() : '';
-    const last = lastName ? lastName[0].toUpperCase() : '';
-    return first + last || 'U';
-  };
+  const filtered = filter === 'ALL' ? requests : requests.filter(r => r.status === filter);
+  const counts = { ALL: requests.length, PENDING: requests.filter(r => r.status === 'PENDING').length, PRAYED: requests.filter(r => r.status === 'PRAYED').length };
 
-  const getAvatarUrl = (avatarUrl?: string): string | null => {
-    if (!avatarUrl) return null;
-    // If it already starts with http, use it as is
-    if (avatarUrl.startsWith('http')) {
-      return avatarUrl;
-    }
-    // If it starts with /, prepend the base URL
-    if (avatarUrl.startsWith('/')) {
-      return `${API_URL}${avatarUrl}`;
-    }
-    // Fallback: return as is (shouldn't happen, but just in case)
-    return avatarUrl;
+  const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+    PENDING: { label: 'Pending', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30', icon: <Clock className="w-3 h-3" /> },
+    PRAYED: { label: 'Prayed', color: 'bg-green-500/20 text-green-400 border-green-500/30', icon: <CheckCircle className="w-3 h-3" /> },
   };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  };
-
-  const getDisplayName = (request: PrayerRequest): string => {
-    if (request.isAnonymous) {
-      return 'Anonymous';
-    }
-    if (request.user) {
-      return `${request.user.firstName} ${request.user.lastName || ''}`.trim();
-    }
-    return 'Unknown User';
-  };
-
-  const getAvatarContent = (request: PrayerRequest) => {
-    if (request.isAnonymous) {
-      return (
-        <div className="w-12 h-12 rounded-full bg-gray-400 flex items-center justify-center">
-          <UserIcon className="w-6 h-6 text-white" />
-        </div>
-      );
-    }
-    
-    const avatarUrl = request.user ? getAvatarUrl(request.user.avatarUrl) : null;
-    if (avatarUrl) {
-      return (
-        <img
-          src={avatarUrl}
-          alt={getDisplayName(request)}
-          className="w-12 h-12 rounded-full object-cover"
-        />
-      );
-    }
-    
-    const initials = request.user 
-      ? getInitials(request.user.firstName, request.user.lastName)
-      : 'U';
-    
-    return (
-      <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold">
-        {initials}
-      </div>
-    );
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading prayer requests...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div>
-      {/* Header Section */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Prayer Wall</h1>
-        <p className="text-gray-600">Requests from the community</p>
+    <div className="p-6 md:p-8 max-w-4xl mx-auto">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="font-serif text-3xl text-primary-theme mb-1">Prayer Wall</h1>
+        <p className="text-muted-theme text-sm">Requests from the community</p>
       </div>
 
-      {/* Prayer Requests Grid */}
-      {prayerRequests.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-md border border-gray-200 p-12 text-center">
-          <HandHeart className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No prayer requests yet</h3>
-          <p className="text-gray-600">Prayer requests from the community will appear here.</p>
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-4 mb-8">
+        {[
+          { label: 'Total Requests', value: counts.ALL, color: 'text-accent' },
+          { label: 'Awaiting Prayer', value: counts.PENDING, color: 'text-yellow-400' },
+          { label: 'Prayed Over', value: counts.PRAYED, color: 'text-green-400' },
+        ].map(stat => (
+          <div key={stat.label} className="card-theme rounded-xl p-4 border border-border-theme text-center">
+            <div className={`font-serif text-3xl ${stat.color} mb-1`}>{stat.value}</div>
+            <div className="text-xs text-muted-theme uppercase tracking-widest">{stat.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter Tabs */}
+      <div className="flex gap-2 mb-6">
+        {(['ALL', 'PENDING', 'PRAYED'] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)} className={`px-4 py-2 rounded-lg text-sm font-sans transition-colors ${filter === f ? 'bg-accent text-black' : 'bg-card-theme text-muted-theme hover:text-primary-theme border border-border-theme'}`}>
+            {f === 'ALL' ? 'All' : f === 'PENDING' ? 'Pending' : 'Prayed'} ({counts[f] ?? requests.length})
+          </button>
+        ))}
+      </div>
+
+      {/* Requests */}
+      {loading ? (
+        <div className="flex items-center justify-center h-40 text-muted-theme">Loading prayer requests...</div>
+      ) : filtered.length === 0 ? (
+        <div className="card-theme rounded-xl p-12 text-center">
+          <Heart className="w-12 h-12 text-muted-theme mx-auto mb-3" />
+          <p className="text-muted-theme">No prayer requests found.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {prayerRequests.map((request) => {
-            const isDeleting = deletingId === request.id;
-            
+        <div className="space-y-3">
+          {filtered.map(req => {
+            const sc = statusConfig[req.status] || statusConfig.PENDING;
+            const isExpanded = expandedId === req.id;
+            const initials = req.isAnonymous ? '?' : `${req.user?.firstName?.[0] ?? ''}${req.user?.lastName?.[0] ?? ''}`;
             return (
-              <div
-                key={request.id}
-                className="bg-white rounded-lg shadow-md border border-gray-200 p-6 hover:shadow-lg transition-shadow"
-              >
-                {/* Card Header */}
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    {getAvatarContent(request)}
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        {getDisplayName(request)}
-                      </h3>
-                      <p className="text-sm text-gray-500">
-                        {formatDate(request.createdAt)}
-                      </p>
+              <div key={req.id} className="card-theme rounded-xl border border-border-theme overflow-hidden">
+                <div className="flex items-start gap-4 p-5">
+                  {/* Avatar */}
+                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center">
+                    {!req.isAnonymous && req.user?.profileImageUrl ? (
+                      <img src={req.user.profileImageUrl} alt="" className="w-full h-full rounded-full object-cover" />
+                    ) : (
+                      <span className="text-accent text-sm font-semibold">{initials}</span>
+                    )}
+                  </div>
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-medium text-primary-theme">
+                        {req.isAnonymous ? 'Anonymous' : `${req.user?.firstName ?? ''} ${req.user?.lastName ?? ''}`.trim() || 'Member'}
+                      </span>
+                      <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${sc.color}`}>
+                        {sc.icon}{sc.label}
+                      </span>
                     </div>
+                    <p className={`text-sm text-muted-theme ${isExpanded ? '' : 'line-clamp-2'}`}>{req.request}</p>
+                    <span className="text-xs text-muted-theme mt-1 block">{new Date(req.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                   </div>
-                  <button
-                    onClick={() => handleDelete(request.id)}
-                    disabled={isDeleting}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    aria-label="Delete prayer request"
-                  >
-                    {isDeleting ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-5 h-5" />
-                    )}
-                  </button>
-                </div>
-
-                {/* Prayer Content */}
-                <div className="mb-4">
-                  <p className="text-gray-700 text-base leading-relaxed whitespace-pre-wrap">
-                    {request.content}
-                  </p>
-                </div>
-
-                {/* Footer with Badges and Prayer Count */}
-                <div className="flex items-center justify-between gap-2 pt-4 border-t border-gray-200">
-                  <div className="flex items-center gap-2">
-                    {request.shareToWall ? (
-                      <span className="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                        Shared to Wall
-                      </span>
-                    ) : (
-                      <span className="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                        Private
-                      </span>
-                    )}
-                  </div>
-                  {/* Prayer Count Badge */}
-                  <div className="flex items-center gap-1.5 text-gray-600">
-                    <HandHeart className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm font-medium">
-                      {request.prayCount || 0} praying
-                    </span>
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button onClick={() => setExpandedId(isExpanded ? null : req.id)} className="p-2 text-muted-theme hover:text-primary-theme transition-colors">
+                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                    <button onClick={() => handleDelete(req.id)} className="p-2 text-muted-theme hover:text-red-400 transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
+                {isExpanded && (
+                  <div className="border-t border-border-theme px-5 py-3 bg-surface-theme flex items-center gap-3">
+                    <span className="text-xs text-muted-theme uppercase tracking-widest">Mark as:</span>
+                    <button onClick={() => handleStatus(req.id, 'PENDING')} className={`px-3 py-1 rounded-lg text-xs transition-colors ${req.status === 'PENDING' ? 'bg-yellow-500/20 text-yellow-400' : 'text-muted-theme hover:text-yellow-400'}`}>Pending</button>
+                    <button onClick={() => handleStatus(req.id, 'PRAYED')} className={`px-3 py-1 rounded-lg text-xs transition-colors ${req.status === 'PRAYED' ? 'bg-green-500/20 text-green-400' : 'text-muted-theme hover:text-green-400'}`}>Prayed</button>
+                  </div>
+                )}
               </div>
             );
           })}

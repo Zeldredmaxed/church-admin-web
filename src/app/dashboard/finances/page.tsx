@@ -1,315 +1,155 @@
 'use client';
-
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
+import { DollarSign, TrendingUp, Calendar, Download } from 'lucide-react';
 import api from '@/utils/api';
-import { DollarSign, TrendingUp, Calendar, Download, Filter, Loader2 } from 'lucide-react';
 
-interface User {
+interface Transaction {
   id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  avatarUrl?: string;
-}
-
-interface Donation {
-  id: string;
-  amount: number; // Stored in CENTS
-  currency: string;
-  status: string; // "pending", "succeeded"
-  paymentId: string;
-  userId?: string | null; // Optional: Guests can give without login
+  amount: number;
+  fund: string;
+  status: string;
   createdAt: string;
-}
-
-interface TransactionWithUser extends Donation {
-  user?: User;
+  donor?: { firstName: string; lastName: string; email: string };
 }
 
 export default function FinancesPage() {
-  const [donations, setDonations] = useState<Donation[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [transactions, setTransactions] = useState<TransactionWithUser[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
-    totalCollected: 0,
-    avgDonation: 0,
-    recentTransactions: 0,
-  });
+  const [tab, setTab] = useState<'overview' | 'transactions'>('overview');
 
   useEffect(() => {
-    fetchData();
+    api.get('/giving/admin').then(r => { setTransactions(r.data); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    // Map donations to include user data
-    const mapped = donations.map((donation) => {
-      const user = donation.userId ? users.find((u) => u.id === donation.userId) : undefined;
-      return { ...donation, user };
-    });
-    setTransactions(mapped);
-    calculateStats(mapped);
-  }, [donations, users]);
+  const total = transactions.filter(t => t.status === 'COMPLETED').reduce((sum, t) => sum + t.amount, 0);
+  const avg = transactions.length > 0 ? total / transactions.filter(t => t.status === 'COMPLETED').length : 0;
+  const recent30 = transactions.filter(t => {
+    const d = new Date(t.createdAt);
+    return Date.now() - d.getTime() < 30 * 86400000 && t.status === 'COMPLETED';
+  });
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const [donationsRes, usersRes] = await Promise.all([
-        api.get('/donations'),
-        api.get('/users'),
-      ]);
+  const byFund = transactions.reduce((acc, t) => {
+    if (t.status !== 'COMPLETED') return acc;
+    acc[t.fund] = (acc[t.fund] || 0) + t.amount;
+    return acc;
+  }, {} as Record<string, number>);
 
-      setDonations(donationsRes.data);
-      setUsers(usersRes.data);
-    } catch (error: any) {
-      console.error('Error fetching finances data:', error);
-      alert('Failed to load finances data. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+  const statusColors: Record<string, string> = {
+    COMPLETED: 'bg-green-500/20 text-green-400',
+    PENDING: 'bg-yellow-500/20 text-yellow-400',
+    FAILED: 'bg-red-500/20 text-red-400',
   };
-
-  const calculateStats = (transactions: TransactionWithUser[]) => {
-    // Only count succeeded donations
-    const succeeded = transactions.filter((t) => t.status === 'succeeded');
-    
-    // Total Collected: Sum of all succeeded donations (convert cents to dollars)
-    const totalCollected = succeeded.reduce((sum, t) => sum + t.amount, 0) / 100;
-    
-    // Avg. Donation: Average amount per transaction
-    const avgDonation = succeeded.length > 0 ? totalCollected / succeeded.length : 0;
-    
-    // Recent Transactions: Count of donations in the last 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const recent = succeeded.filter(
-      (t) => new Date(t.createdAt) >= thirtyDaysAgo
-    ).length;
-
-    setStats({
-      totalCollected,
-      avgDonation,
-      recentTransactions: recent,
-    });
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  };
-
-  const getInitials = (firstName: string, lastName: string) => {
-    return `${firstName[0]}${lastName[0]}`.toUpperCase();
-  };
-
-  const handleExportCSV = () => {
-    // Placeholder for CSV export functionality
-    alert('CSV export functionality will be implemented soon.');
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading finances data...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Filter only succeeded donations for display
-  const succeededTransactions = transactions.filter((t) => t.status === 'succeeded');
 
   return (
-    <div>
-      {/* Header Section */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="p-6 md:p-8 max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Finances & Giving</h1>
-          <p className="text-gray-600">Track donations and financial transactions</p>
+          <h1 className="font-serif text-3xl text-primary-theme mb-1">Finances & Giving</h1>
+          <p className="text-muted-theme text-sm">Track donations and financial transactions</p>
         </div>
         <div className="flex items-center gap-3">
-          {/* Date Range Picker (Visual Only) */}
-          <div className="relative">
-            <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors">
-              <Filter className="w-4 h-4" />
-              <span>Date Range</span>
-            </button>
+          <div className="flex bg-card-theme border border-border-theme rounded-lg overflow-hidden">
+            <button onClick={() => setTab('overview')} className={`px-4 py-2 text-sm font-sans transition-colors ${tab === 'overview' ? 'bg-accent text-black' : 'text-muted-theme hover:text-primary-theme'}`}>Overview</button>
+            <button onClick={() => setTab('transactions')} className={`px-4 py-2 text-sm font-sans transition-colors ${tab === 'transactions' ? 'bg-accent text-black' : 'text-muted-theme hover:text-primary-theme'}`}>Transactions</button>
           </div>
-          {/* Export CSV Button (Visual Only) */}
-          <button
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            Export CSV
-          </button>
         </div>
       </div>
 
-      {/* Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        {/* Total Collected Card */}
-        <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-green-100 rounded-lg">
-              <DollarSign className="w-6 h-6 text-green-600" />
+      {/* Stat Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        {[
+          { label: 'Total Collected', value: `$${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, sub: 'All time donations', icon: <DollarSign className="w-5 h-5" />, color: 'text-accent' },
+          { label: 'Avg. Donation', value: `$${isNaN(avg) ? '0.00' : avg.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, sub: 'Per transaction', icon: <TrendingUp className="w-5 h-5" />, color: 'text-blue-400' },
+          { label: 'Recent Transactions', value: recent30.length, sub: 'Last 30 days', icon: <Calendar className="w-5 h-5" />, color: 'text-purple-400' },
+        ].map(stat => (
+          <div key={stat.label} className="card-theme rounded-xl p-5 border border-border-theme">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs uppercase tracking-widest text-muted-theme">{stat.label}</span>
+              <span className={`${stat.color} opacity-70`}>{stat.icon}</span>
             </div>
+            <div className={`font-serif text-3xl ${stat.color} mb-1`}>{stat.value}</div>
+            <div className="text-xs text-muted-theme">{stat.sub}</div>
           </div>
-          <h3 className="text-sm font-medium text-gray-600 mb-1">Total Collected</h3>
-          <p className="text-3xl font-bold text-gray-900">{formatCurrency(stats.totalCollected)}</p>
-          <p className="text-xs text-gray-500 mt-1">All time donations</p>
-        </div>
-
-        {/* Avg. Donation Card */}
-        <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-blue-100 rounded-lg">
-              <TrendingUp className="w-6 h-6 text-blue-600" />
-            </div>
-          </div>
-          <h3 className="text-sm font-medium text-gray-600 mb-1">Avg. Donation</h3>
-          <p className="text-3xl font-bold text-gray-900">{formatCurrency(stats.avgDonation)}</p>
-          <p className="text-xs text-gray-500 mt-1">Per transaction</p>
-        </div>
-
-        {/* Recent Transactions Card */}
-        <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-purple-100 rounded-lg">
-              <Calendar className="w-6 h-6 text-purple-600" />
-            </div>
-          </div>
-          <h3 className="text-sm font-medium text-gray-600 mb-1">Recent Transactions</h3>
-          <p className="text-3xl font-bold text-gray-900">{stats.recentTransactions}</p>
-          <p className="text-xs text-gray-500 mt-1">Last 30 days</p>
-        </div>
+        ))}
       </div>
 
-      {/* Transaction Table */}
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">Transaction History</h2>
-          <p className="text-sm text-gray-600 mt-1">All successful donations</p>
+      {tab === 'overview' ? (
+        /* Fund Breakdown */
+        <div className="card-theme rounded-xl border border-border-theme p-6">
+          <h2 className="font-serif text-xl text-primary-theme mb-5">Giving by Fund</h2>
+          {Object.keys(byFund).length === 0 ? (
+            <p className="text-muted-theme text-sm text-center py-8">No fund data available yet.</p>
+          ) : (
+            <div className="space-y-4">
+              {Object.entries(byFund).sort((a, b) => b[1] - a[1]).map(([fund, amount]) => {
+                const pct = total > 0 ? (amount / total) * 100 : 0;
+                return (
+                  <div key={fund}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-sm text-primary-theme">{fund}</span>
+                      <span className="text-sm text-accent font-medium">${amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="h-2 bg-surface-theme rounded-full overflow-hidden">
+                      <div className="h-full bg-accent rounded-full transition-all duration-700" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-xs text-muted-theme mt-0.5 block">{pct.toFixed(1)}% of total</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Donor
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Amount
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Fund
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {succeededTransactions.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
-                    No transactions found
-                  </td>
-                </tr>
-              ) : (
-                succeededTransactions.map((transaction) => {
-                  const isGuest = !transaction.userId || !transaction.user;
-                  const donorName = isGuest
-                    ? 'Guest'
-                    : `${transaction.user!.firstName} ${transaction.user!.lastName}`;
-                  const donorInitials = isGuest
-                    ? 'GU'
-                    : getInitials(transaction.user!.firstName, transaction.user!.lastName);
-
-                  return (
-                    <tr key={transaction.id} className="hover:bg-gray-50">
-                      {/* Donor Column */}
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          {isGuest ? (
-                            <div className="w-10 h-10 rounded-full bg-gray-400 flex items-center justify-center text-white font-semibold text-sm mr-3">
-                              {donorInitials}
-                            </div>
-                          ) : transaction.user!.avatarUrl ? (
-                            <img
-                              src={transaction.user!.avatarUrl}
-                              alt={donorName}
-                              className="w-10 h-10 rounded-full object-cover mr-3"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold text-sm mr-3">
-                              {donorInitials}
-                            </div>
-                          )}
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">{donorName}</div>
-                            {!isGuest && (
-                              <div className="text-sm text-gray-500">{transaction.user!.email}</div>
-                            )}
-                          </div>
-                        </div>
+      ) : (
+        /* Transactions Table */
+        <div className="card-theme rounded-xl border border-border-theme overflow-hidden">
+          <div className="flex items-center justify-between p-5 border-b border-border-theme">
+            <h2 className="font-serif text-xl text-primary-theme">Transaction History</h2>
+            <span className="text-xs text-muted-theme">All successful donations</span>
+          </div>
+          {loading ? (
+            <div className="flex items-center justify-center h-40 text-muted-theme">Loading transactions...</div>
+          ) : transactions.length === 0 ? (
+            <div className="p-12 text-center">
+              <DollarSign className="w-12 h-12 text-muted-theme mx-auto mb-3" />
+              <p className="text-muted-theme">No transactions found.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border-theme">
+                    <th className="text-left px-5 py-3 text-xs uppercase tracking-widest text-muted-theme font-medium">Donor</th>
+                    <th className="text-left px-5 py-3 text-xs uppercase tracking-widest text-muted-theme font-medium">Amount</th>
+                    <th className="text-left px-5 py-3 text-xs uppercase tracking-widest text-muted-theme font-medium">Fund</th>
+                    <th className="text-left px-5 py-3 text-xs uppercase tracking-widest text-muted-theme font-medium">Date</th>
+                    <th className="text-left px-5 py-3 text-xs uppercase tracking-widest text-muted-theme font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transactions.map((t, i) => (
+                    <tr key={t.id} className={`border-b border-border-theme/50 hover:bg-surface-theme transition-colors ${i % 2 === 0 ? '' : 'bg-surface-theme/30'}`}>
+                      <td className="px-5 py-3.5">
+                        <div className="text-sm text-primary-theme">{t.donor ? `${t.donor.firstName} ${t.donor.lastName}` : 'Anonymous'}</div>
+                        {t.donor?.email && <div className="text-xs text-muted-theme">{t.donor.email}</div>}
                       </td>
-
-                      {/* Amount Column */}
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-semibold text-gray-900">
-                          {formatCurrency(transaction.amount / 100)}
-                        </div>
-                      </td>
-
-                      {/* Fund Column */}
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-600">General Tithe</div>
-                      </td>
-
-                      {/* Date Column */}
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-600">{formatDate(transaction.createdAt)}</div>
-                      </td>
-
-                      {/* Status Column */}
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                          Succeeded
-                        </span>
+                      <td className="px-5 py-3.5 text-sm font-medium text-accent">${t.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                      <td className="px-5 py-3.5 text-sm text-muted-theme">{t.fund}</td>
+                      <td className="px-5 py-3.5 text-sm text-muted-theme">{new Date(t.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                      <td className="px-5 py-3.5">
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[t.status] || 'bg-white/10 text-white'}`}>{t.status}</span>
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                  ))}
+                </tbody>
+              </table>
+              <div className="px-5 py-3 border-t border-border-theme text-xs text-muted-theme">
+                Showing {transactions.length} transaction{transactions.length !== 1 ? 's' : ''}
+              </div>
+            </div>
+          )}
         </div>
-
-        {/* Footer with count */}
-        <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
-          <p className="text-sm text-gray-600">
-            Showing {succeededTransactions.length} {succeededTransactions.length === 1 ? 'transaction' : 'transactions'}
-          </p>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

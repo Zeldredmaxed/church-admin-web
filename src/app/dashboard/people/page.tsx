@@ -1,661 +1,508 @@
 'use client';
-
 import { useState, useEffect } from 'react';
 import api from '@/utils/api';
-import { useRouter } from 'next/navigation';
-import { Search, Plus, Filter, MessageSquare, Tag as TagIcon, X, Edit2, Check, User, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
-
-const API_BASE = 'http://localhost:3000';
+import {
+  Search, Plus, Filter, MessageSquare, Tag as TagIcon,
+  X, Edit2, User, ChevronDown, ChevronUp, Trash2, Check,
+} from 'lucide-react';
 
 const PERMISSIONS = [
-  { key: 'SUPER_ADMIN', label: 'Full Access (Pastor)' },
-  { key: 'MANAGE_PEOPLE', label: 'Manage People & Tags' },
-  { key: 'MANAGE_EVENTS', label: 'Events & Calendar' },
-  { key: 'MANAGE_MEDIA', label: 'Media & Sermons' },
-  { key: 'MANAGE_PRAYER', label: 'Prayer Wall' },
+  { key: 'SUPER_ADMIN',          label: 'Full Access (Pastor)' },
+  { key: 'MANAGE_PEOPLE',        label: 'Manage People & Tags' },
+  { key: 'MANAGE_EVENTS',        label: 'Events & Calendar' },
+  { key: 'MANAGE_MEDIA',         label: 'Media & Sermons' },
+  { key: 'MANAGE_PRAYER',        label: 'Prayer Wall' },
   { key: 'MANAGE_ANNOUNCEMENTS', label: 'Announcements' },
-  { key: 'MANAGE_FINANCE', label: 'Giving & Finances' },
-  { key: 'MANAGE_CHAT', label: 'Chat Moderation' },
-  { key: 'MANAGE_SUPPORT', label: 'Support & Bugs' },
+  { key: 'MANAGE_FINANCE',       label: 'Giving & Finances' },
+  { key: 'MANAGE_CHAT',          label: 'Chat Moderation' },
+  { key: 'MANAGE_SUPPORT',       label: 'Support & Bugs' },
 ];
 
+function getInitials(firstName: string, lastName: string) {
+  return `${firstName?.[0] ?? ''}${lastName?.[0] ?? ''}`.toUpperCase();
+}
+
 export default function PeoplePage() {
-  const router = useRouter();
-  
-  // --- DATA STATE ---
-  const [users, setUsers] = useState<any[]>([]);
-  const [tags, setTags] = useState<any[]>([]);
+  const [users, setUsers]   = useState<any[]>([]);
+  const [tags, setTags]     = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // --- FILTER STATE ---
-  const [showFilterPanel, setShowFilterPanel] = useState(false);
-  const [genderFilter, setGenderFilter] = useState('All');
-  const [maritalFilter, setMaritalFilter] = useState('All');
-  const [ageGroup, setAgeGroup] = useState('All');
-  const [membershipStatus, setMembershipStatus] = useState('All');
-  const [ministryInterest, setMinistryInterest] = useState('All');
-  const [attendanceFreq, setAttendanceFreq] = useState('All');
-  
-  // Boolean Filters
-  const [isBaptized, setIsBaptized] = useState(false);
-  const [isNewMember, setIsNewMember] = useState(false);
-  const [hasChildren, setHasChildren] = useState(false);
-  const [pastoralCare, setPastoralCare] = useState(false);
+  const [search, setSearch] = useState('');
+  const [expandedUser, setExpandedUser] = useState<string | null>(null);
 
-  // --- EDIT USER MODAL STATE ---
-  const [showEditUserModal, setShowEditUserModal] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<any | null>(null);
-  const [activeTab, setActiveTab] = useState('Basic'); 
+  // Filter state
+  const [showFilters, setShowFilters] = useState(false);
+  const [genderFilter, setGenderFilter]     = useState('All');
+  const [membershipFilter, setMembershipFilter] = useState('All');
 
-  // Edit Form Fields
+  // Edit modal
+  const [editUser, setEditUser]     = useState<any | null>(null);
+  const [editRole, setEditRole]     = useState('');
+  const [editPerms, setEditPerms]   = useState<string[]>([]);
   const [editGender, setEditGender] = useState('');
   const [editMarital, setEditMarital] = useState('');
-  const [editDob, setEditDob] = useState('');
-  const [editParenting, setEditParenting] = useState('');
-  const [editSingleParent, setEditSingleParent] = useState(false);
   const [editMembership, setEditMembership] = useState('');
-  const [editIsBaptized, setEditIsBaptized] = useState(false);
-  const [editMinistrySkills, setEditMinistrySkills] = useState('');
-  const [editPastoralCareNeeded, setEditPastoralCareNeeded] = useState(false);
-  const [editCareTypes, setEditCareTypes] = useState('');
-  const [editLifeEvents, setEditLifeEvents] = useState('');
-  const [editPermissions, setEditPermissions] = useState<string[]>([]);
-  const [editRole, setEditRole] = useState('');
-  
-  // Tag Modal
+  const [editBaptized, setEditBaptized] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Tag modal
   const [showTagModal, setShowTagModal] = useState(false);
-  const [newTagName, setNewTagName] = useState('');
-  const [newTagColor, setNewTagColor] = useState('#1976D2');
+  const [newTagName, setNewTagName]     = useState('');
+  const [newTagColor, setNewTagColor]   = useState('#c9a96e');
 
   useEffect(() => { fetchData(); }, []);
 
-  // Get current admin user and check if super admin
-  const getCurrentUser = () => {
-    try {
-      const userString = localStorage.getItem('user');
-      if (!userString) return null;
-      return JSON.parse(userString);
-    } catch {
-      return null;
-    }
-  };
-
-  const isSuperAdmin = () => {
-    const currentUser = getCurrentUser();
-    if (!currentUser?.adminPermissions) return false;
-    return currentUser.adminPermissions.includes('SUPER_ADMIN');
-  };
-
-  const fetchData = async () => {
+  async function fetchData() {
     try {
       setLoading(true);
       const [usersRes, tagsRes] = await Promise.all([
         api.get('/users'),
-        api.get('/tags')
+        api.get('/tags'),
       ]);
       setUsers(usersRes.data);
       setTags(tagsRes.data);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }
 
-  // --- FILTER LOGIC ---
-  const applyFilter = async () => {
-    setLoading(true);
+  function openEdit(user: any) {
+    setEditUser(user);
+    setEditRole(user.role ?? 'MEMBER');
+    setEditPerms(user.adminPermissions ?? []);
+    setEditGender(user.gender ?? '');
+    setEditMarital(user.maritalStatus ?? '');
+    setEditMembership(user.membershipStatus ?? '');
+    setEditBaptized(user.isBaptized ?? false);
+  }
+
+  async function saveEdit() {
+    if (!editUser) return;
+    setSaving(true);
     try {
-      // Calculate Age Logic
-      let minAge, maxAge;
-      if (ageGroup !== 'All') {
-        switch (ageGroup) {
-          case 'Child': minAge = 0; maxAge = 12; break;
-          case 'Youth': minAge = 13; maxAge = 18; break;
-          case 'Young Adult': minAge = 19; maxAge = 29; break;
-          case 'Adult': minAge = 30; maxAge = 64; break;
-          case 'Senior': minAge = 65; maxAge = 120; break;
-        }
-      }
-
-      const criteria = {
-        gender: genderFilter !== 'All' ? genderFilter : undefined,
-        maritalStatus: maritalFilter !== 'All' ? maritalFilter : undefined,
-        membershipStatus: membershipStatus !== 'All' ? membershipStatus : undefined,
-        ministryInterest: ministryInterest !== 'All' ? ministryInterest : undefined,
-        attendanceFreq: attendanceFreq !== 'All' ? attendanceFreq : undefined,
-        isBaptized: isBaptized ? true : undefined,
-        isNewMember: isNewMember ? true : undefined,
-        hasChildren: hasChildren ? true : undefined,
-        pastoralCareNeeded: pastoralCare ? true : undefined,
-        minAge,
-        maxAge
-      };
-
-      const response = await api.post('/users/filter', criteria);
-      setUsers(response.data);
-    } catch (error) {
-      console.error('Filter error:', error);
-      alert('Filter failed. Check backend logs.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const clearFilters = () => {
-    setGenderFilter('All');
-    setMaritalFilter('All');
-    setAgeGroup('All');
-    setMembershipStatus('All');
-    setMinistryInterest('All');
-    setIsBaptized(false);
-    setIsNewMember(false);
-    fetchData();
-  };
-
-  const messageFilteredGroup = async () => {
-    const groupName = prompt(`Name this group (${users.length} people):`);
-    if (!groupName) return;
-    try {
-      const adminUser = JSON.parse(localStorage.getItem('user') || '{}');
-      await api.post('/chat/group', {
-        name: groupName,
-        adminId: adminUser.id,
-        memberIds: users.map(u => u.id)
-      });
-      router.push('/dashboard/chat');
-    } catch (error) {
-      alert('Could not create group');
-    }
-  };
-
-  // --- EDIT USER LOGIC ---
-  const openEditUser = (user: any) => {
-    setSelectedUser(user);
-    setEditGender(user.gender || '');
-    setEditMarital(user.maritalStatus || '');
-    setEditDob(user.dateOfBirth ? user.dateOfBirth.split('T')[0] : '');
-    setEditParenting(user.parentingStage || '');
-    setEditSingleParent(user.singleParent || false);
-    setEditMembership(user.membershipStatus || '');
-    setEditIsBaptized(user.isBaptized || false);
-    // Arrays to string
-    setEditMinistrySkills(user.ministrySkills ? user.ministrySkills.join(', ') : '');
-    setEditPastoralCareNeeded(user.pastoralCareNeeded || false);
-    setEditCareTypes(user.careTypes ? user.careTypes.join(', ') : '');
-    setEditLifeEvents(user.lifeEvents ? user.lifeEvents.join(', ') : '');
-    setEditPermissions(user.adminPermissions || []);
-    setEditRole(user.role || 'MEMBER');
-    
-    setShowEditUserModal(true);
-  };
-
-  const saveUserDemographics = async () => {
-    if (!selectedUser) return;
-    try {
-      const toArray = (str: string) => str ? str.split(',').map(s => s.trim()).filter(s => s.length > 0) : [];
-      
-      // Filter out SUPER_ADMIN for LEADER role
-      let permissionsToSave = editPermissions;
-      if (editRole === 'LEADER') {
-        permissionsToSave = editPermissions.filter(p => p !== 'SUPER_ADMIN');
-      }
-      
-      const payload = {
+      await api.patch(`/users/${editUser.id}`, {
+        role: editRole,
+        adminPermissions: editPerms,
         gender: editGender,
         maritalStatus: editMarital,
-        dateOfBirth: editDob ? new Date(editDob).toISOString() : undefined,
-        parentingStage: editParenting,
-        singleParent: editSingleParent,
         membershipStatus: editMembership,
-        isBaptized: editIsBaptized,
-        ministrySkills: toArray(editMinistrySkills),
-        pastoralCareNeeded: editPastoralCareNeeded,
-        careTypes: toArray(editCareTypes),
-        lifeEvents: toArray(editLifeEvents),
-        adminPermissions: permissionsToSave,
-        role: editRole,
-      };
+        isBaptized: editBaptized,
+      });
+      await fetchData();
+      setEditUser(null);
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
+  }
 
-      await api.patch(`/users/${selectedUser.id}`, payload);
-      setShowEditUserModal(false);
-      fetchData();
-      alert('User updated!');
-    } catch (error) {
-      console.error('Save failed', error);
-      alert('Failed to save changes.');
-    }
-  };
-
-  const handleDeleteUser = async () => {
-    if (!selectedUser) return;
-    
-    const currentUser = getCurrentUser();
-    if (!currentUser) {
-      alert('Unable to verify permissions.');
-      return;
-    }
-
-    // Prevent deleting yourself
-    if (selectedUser.id === currentUser.id) {
-      alert('You cannot delete your own account.');
-      return;
-    }
-
-    const confirmed = window.confirm(
-      'WARNING: This will permanently delete this user, their chats, and history. Are you sure?'
-    );
-
-    if (!confirmed) return;
-
+  async function deleteUser(id: string) {
+    if (!confirm('Are you sure you want to remove this member?')) return;
     try {
-      await api.delete(`/users/${selectedUser.id}`);
-      setShowEditUserModal(false);
-      alert('User Deleted');
-      fetchData();
-    } catch (error) {
-      console.error('Delete failed', error);
-      alert('Failed to delete user.');
-    }
-  };
+      await api.delete(`/users/${id}`);
+      setUsers(prev => prev.filter(u => u.id !== id));
+    } catch (e) { console.error(e); }
+  }
 
-  // --- TAG LOGIC ---
-  const createTag = async (e: React.FormEvent) => {
-    e.preventDefault();
+  async function createTag() {
+    if (!newTagName.trim()) return;
     try {
-      await api.post('/tags', { name: newTagName, color: newTagColor });
-      setShowTagModal(false);
+      await api.post('/tags', { name: newTagName.trim(), color: newTagColor });
       setNewTagName('');
-      const res = await api.get('/tags');
-      setTags(res.data);
-    } catch (error) { alert('Error creating tag'); }
-  };
+      setShowTagModal(false);
+      fetchData();
+    } catch (e) { console.error(e); }
+  }
 
-  const toggleTagForUser = async (tagId: string, hasTag: boolean) => {
-    if (!selectedUser) return;
+  async function assignTag(userId: string, tagId: string) {
     try {
-      if (hasTag) await api.delete(`/tags/${tagId}/users/${selectedUser.id}`);
-      else await api.post(`/tags/${tagId}/users`, { userId: selectedUser.id });
-      
-      const res = await api.get(`/users/${selectedUser.id}`);
-      setSelectedUser(res.data);
-      setUsers(users.map(u => u.id === selectedUser.id ? res.data : u));
-    } catch (error) { console.error('Tag error', error); }
-  };
+      await api.post(`/users/${userId}/tags`, { tagId });
+      fetchData();
+    } catch (e) { console.error(e); }
+  }
 
-  // Helper
-  const getAvatarUrl = (url?: string) => {
-    if (!url) return null;
-    return url.startsWith('http') ? url : `${API_BASE}${url}`;
+  async function removeTag(userId: string, tagId: string) {
+    try {
+      await api.delete(`/users/${userId}/tags/${tagId}`);
+      fetchData();
+    } catch (e) { console.error(e); }
+  }
+
+  const filtered = users.filter(u => {
+    const name = `${u.firstName} ${u.lastName} ${u.email}`.toLowerCase();
+    if (search && !name.includes(search.toLowerCase())) return false;
+    if (genderFilter !== 'All' && u.gender !== genderFilter) return false;
+    if (membershipFilter !== 'All' && u.membershipStatus !== membershipFilter) return false;
+    return true;
+  });
+
+  const roleColor = (role: string) => {
+    if (role === 'ADMIN') return 'nb-badge nb-badge-gold';
+    if (role === 'LEADER') return 'nb-badge nb-badge-blue';
+    return 'nb-badge nb-badge-green';
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">People Directory</h1>
-          <p className="text-gray-500">Manage {users.length} members</p>
+          <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+            {filtered.length} member{filtered.length !== 1 ? 's' : ''} found
+          </p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowTagModal(true)} className="px-4 py-2 bg-white border rounded hover:bg-gray-50">
-            Manage Tags
+        <div style={{ display: 'flex', gap: '0.625rem', flexWrap: 'wrap' }}>
+          <button className="btn-ghost" onClick={() => setShowFilters(!showFilters)}>
+            <Filter size={14} /> Filters
           </button>
-          <button onClick={() => setShowFilterPanel(!showFilterPanel)} className={`px-4 py-2 rounded flex items-center gap-2 ${showFilterPanel ? 'bg-blue-100 text-blue-700' : 'bg-blue-600 text-white'}`}>
-            <Filter size={18} /> {showFilterPanel ? 'Hide Filters' : 'Filters'}
+          <button className="btn-ghost" onClick={() => setShowTagModal(true)}>
+            <TagIcon size={14} /> Manage Tags
           </button>
         </div>
       </div>
 
-      {/* COLLAPSIBLE FILTER PANEL */}
-      {showFilterPanel && (
-        <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200 mb-6 animate-in slide-in-from-top-2">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Demographics */}
-            <div className="space-y-3">
-              <h4 className="font-bold text-gray-700 text-sm uppercase">Demographics</h4>
-              <select value={genderFilter} onChange={e => setGenderFilter(e.target.value)} className="w-full border rounded p-2 text-sm">
-                <option value="All">Gender: All</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-              </select>
-              <select value={maritalFilter} onChange={e => setMaritalFilter(e.target.value)} className="w-full border rounded p-2 text-sm">
-                <option value="All">Marital: All</option>
-                <option value="Single">Single</option>
-                <option value="Married">Married</option>
-                <option value="Divorced">Divorced</option>
-                <option value="Widowed">Widowed</option>
-              </select>
-              <select value={ageGroup} onChange={e => setAgeGroup(e.target.value)} className="w-full border rounded p-2 text-sm">
-                <option value="All">Age Group: All</option>
-                <option value="Child">Child (0-12)</option>
-                <option value="Youth">Youth (13-18)</option>
-                <option value="Young Adult">Young Adult (19-29)</option>
-                <option value="Adult">Adult (30-64)</option>
-                <option value="Senior">Senior (65+)</option>
-              </select>
-            </div>
+      {/* Search */}
+      <div className="nb-search">
+        <Search size={15} />
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search members by name or email…"
+          style={{ width: '100%', maxWidth: 420 }}
+        />
+      </div>
 
-            {/* Spiritual & Ministry */}
-            <div className="space-y-3">
-              <h4 className="font-bold text-gray-700 text-sm uppercase">Ministry</h4>
-              <select value={membershipStatus} onChange={e => setMembershipStatus(e.target.value)} className="w-full border rounded p-2 text-sm">
-                <option value="All">Status: All</option>
-                <option value="Member">Member</option>
-                <option value="Visitor">Visitor</option>
-                <option value="Leadership">Leadership</option>
-              </select>
-              <select value={ministryInterest} onChange={e => setMinistryInterest(e.target.value)} className="w-full border rounded p-2 text-sm">
-                <option value="All">Interest: All</option>
-                <option value="Worship">Worship</option>
-                <option value="Tech">Tech</option>
-                <option value="Youth">Youth</option>
-                <option value="Kids">Children's Ministry</option>
-              </select>
-              <div className="flex gap-4 pt-2">
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isBaptized} onChange={e => setIsBaptized(e.target.checked)} /> Baptized</label>
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isNewMember} onChange={e => setIsNewMember(e.target.checked)} /> New Member</label>
-              </div>
-            </div>
-
-            {/* Care & Family */}
-            <div className="space-y-3">
-              <h4 className="font-bold text-gray-700 text-sm uppercase">Care & Family</h4>
-              <select value={attendanceFreq} onChange={e => setAttendanceFreq(e.target.value)} className="w-full border rounded p-2 text-sm">
-                <option value="All">Attendance: All</option>
-                <option value="Weekly">Weekly</option>
-                <option value="Monthly">Monthly</option>
-                <option value="Occasional">Occasional</option>
-              </select>
-              <div className="space-y-2 pt-2">
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={hasChildren} onChange={e => setHasChildren(e.target.checked)} /> Has Children</label>
-                <label className="flex items-center gap-2 text-sm text-red-600 font-medium"><input type="checkbox" checked={pastoralCare} onChange={e => setPastoralCare(e.target.checked)} /> Needs Pastoral Care</label>
-              </div>
-            </div>
+      {/* Filter panel */}
+      {showFilters && (
+        <div className="nb-card" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', padding: '1rem 1.25rem' }}>
+          <div style={{ minWidth: 140 }}>
+            <label>Gender</label>
+            <select value={genderFilter} onChange={e => setGenderFilter(e.target.value)}>
+              <option>All</option>
+              <option>Male</option>
+              <option>Female</option>
+            </select>
           </div>
-
-          <div className="mt-6 flex justify-between border-t pt-4">
-            <button onClick={clearFilters} className="text-gray-500 hover:text-black text-sm">Reset All</button>
-            <div className="flex gap-3">
-              <button onClick={applyFilter} className="px-6 py-2 bg-blue-600 text-white rounded font-medium hover:bg-blue-700">Apply Filters</button>
-              <button onClick={messageFilteredGroup} className="px-4 py-2 bg-green-600 text-white rounded font-medium hover:bg-green-700 flex items-center gap-2">
-                <MessageSquare size={16} /> Message These {users.length}
-              </button>
-            </div>
+          <div style={{ minWidth: 180 }}>
+            <label>Membership Status</label>
+            <select value={membershipFilter} onChange={e => setMembershipFilter(e.target.value)}>
+              <option>All</option>
+              <option>Active Member</option>
+              <option>New Member</option>
+              <option>Visitor</option>
+              <option>Inactive</option>
+            </select>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+            <button className="btn-ghost" onClick={() => { setGenderFilter('All'); setMembershipFilter('All'); }}>
+              <X size={13} /> Clear
+            </button>
           </div>
         </div>
       )}
 
-      {/* USER TABLE */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Tags</th>
-              <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase">Edit</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {users.map(user => {
-              const avatar = getAvatarUrl(user.avatarUrl);
-              return (
-                <tr key={user.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 flex items-center gap-3">
-                    {avatar ? 
-                      <img src={avatar} className="w-10 h-10 rounded-full object-cover" /> :
-                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">{user.firstName[0]}</div>
-                    }
-                    <div>
-                      <div className="font-medium text-gray-900">{user.firstName} {user.lastName}</div>
-                      <div className="text-xs text-gray-500">{user.email}</div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm">{user.membershipStatus || 'Visitor'}</div>
-                    <div className="text-xs text-gray-500">{user.gender} • {user.ageGroup || user.maritalStatus}</div>
-                  </td>
-                  <td className="px-6 py-4 flex flex-wrap gap-1">
-                    {user.tags.map((t: any) => (
-                      <span key={t.tag.id} style={{backgroundColor: t.tag.color}} className="px-2 py-0.5 rounded text-xs text-white">{t.tag.name}</span>
-                    ))}
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <button onClick={() => openEditUser(user)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-full"><Edit2 size={18}/></button>
-                  </td>
+      {/* Members table */}
+      <div className="nb-card" style={{ padding: 0, overflow: 'hidden' }}>
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
+            <div className="nb-spinner" style={{ width: 28, height: 28 }}></div>
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="nb-table">
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th>Role</th>
+                  <th>Membership</th>
+                  <th>Tags</th>
+                  <th>Joined</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* EDIT MODAL */}
-      {showEditUserModal && selectedUser && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="p-6 border-b flex justify-between items-center">
-              <h3 className="text-xl font-bold">Edit Profile</h3>
-              <button onClick={() => setShowEditUserModal(false)}><X size={24}/></button>
-            </div>
-            
-            <div className="flex border-b">
-              {['Basic', 'Family', 'Ministry', 'Care', ...(editRole === 'ADMIN' || editRole === 'LEADER' ? ['Permissions'] : [])].map(tab => (
-                <button 
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`flex-1 py-3 text-sm font-medium ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-800'}`}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-
-            <div className="p-6 overflow-y-auto flex-1">
-              {activeTab === 'Basic' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2 text-center mb-4">
-                    <h4 className="font-bold text-lg">{selectedUser.firstName} {selectedUser.lastName}</h4>
-                    <p className="text-sm text-gray-500">{selectedUser.email}</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold mb-1">Gender</label>
-                    <select value={editGender} onChange={e => setEditGender(e.target.value)} className="w-full border p-2 rounded">
-                      <option value="">Select</option><option value="Male">Male</option><option value="Female">Female</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold mb-1">Marital Status</label>
-                    <select value={editMarital} onChange={e => setEditMarital(e.target.value)} className="w-full border p-2 rounded">
-                      <option value="">Select</option><option value="Single">Single</option><option value="Married">Married</option><option value="Widowed">Widowed</option>
-                    </select>
-                  </div>
-                  <div className="col-span-2">
-                    <label className="block text-xs font-bold mb-1">Date of Birth</label>
-                    <input type="date" value={editDob} onChange={e => setEditDob(e.target.value)} className="w-full border p-2 rounded"/>
-                  </div>
-                  <div className="col-span-2">
-                    <label className="block text-xs font-bold mb-1 text-red-600">Role <span className="text-gray-500 font-normal">(Sensitive Setting)</span></label>
-                    <select 
-                      value={editRole} 
-                      onChange={e => setEditRole(e.target.value)} 
-                      className="w-full border-2 border-red-300 p-2 rounded font-semibold bg-red-50"
-                    >
-                      <option value="MEMBER">MEMBER</option>
-                      <option value="ADMIN">ADMIN</option>
-                      <option value="LEADER">LEADER</option>
-                      <option value="GUEST">GUEST</option>
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'Family' && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold mb-1">Parenting Stage</label>
-                    <select value={editParenting} onChange={e => setEditParenting(e.target.value)} className="w-full border p-2 rounded">
-                      <option value="">Select</option><option value="Expecting">Expecting</option><option value="Young Kids">Young Kids</option><option value="Teens">Teens</option><option value="Empty Nest">Empty Nest</option>
-                    </select>
-                  </div>
-                  <label className="flex items-center gap-2"><input type="checkbox" checked={editSingleParent} onChange={e => setEditSingleParent(e.target.checked)}/> Single Parent Household</label>
-                </div>
-              )}
-
-              {activeTab === 'Ministry' && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold mb-1">Membership Status</label>
-                    <select value={editMembership} onChange={e => setEditMembership(e.target.value)} className="w-full border p-2 rounded">
-                      <option value="Visitor">Visitor</option><option value="Member">Member</option><option value="Leader">Leader</option>
-                    </select>
-                  </div>
-                  <label className="flex items-center gap-2"><input type="checkbox" checked={editIsBaptized} onChange={e => setEditIsBaptized(e.target.checked)}/> Has been Baptized</label>
-                  <div>
-                    <label className="block text-xs font-bold mb-1">Ministry Skills (comma separated)</label>
-                    <input type="text" value={editMinistrySkills} onChange={e => setEditMinistrySkills(e.target.value)} className="w-full border p-2 rounded" placeholder="Singing, Tech, Kids..."/>
-                  </div>
-                  <div className="pt-4 border-t">
-                    <h4 className="text-sm font-bold mb-2">Manage Tags</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {tags.map(tag => {
-                        const hasTag = selectedUser.tags.some((t: any) => t.tag.id === tag.id);
-                        return (
-                          <button 
-                            key={tag.id} 
-                            onClick={() => toggleTagForUser(tag.id, hasTag)}
-                            className={`px-3 py-1 rounded text-xs border ${hasTag ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-600 border-gray-200'}`}
-                          >
-                            {tag.name} {hasTag && '✓'}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'Care' && (
-                <div className="space-y-4">
-                  <div className="bg-red-50 p-4 rounded-lg border border-red-100">
-                    <label className="flex items-center gap-2 font-bold text-red-700">
-                      <input type="checkbox" checked={editPastoralCareNeeded} onChange={e => setEditPastoralCareNeeded(e.target.checked)}/> 
-                      NEEDS PASTORAL CARE
-                    </label>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold mb-1">Care Types / Needs</label>
-                    <input type="text" value={editCareTypes} onChange={e => setEditCareTypes(e.target.value)} className="w-full border p-2 rounded" placeholder="Grief, Financial, Marriage..."/>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold mb-1">Recent Life Events</label>
-                    <input type="text" value={editLifeEvents} onChange={e => setEditLifeEvents(e.target.value)} className="w-full border p-2 rounded" placeholder="New Baby, Moved, Job Change..."/>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'Permissions' && (editRole === 'ADMIN' || editRole === 'LEADER') && (
-                <div className="space-y-4">
-                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
-                    <p className="text-sm text-blue-800">
-                      {editRole === 'ADMIN' ? (
-                        <>Select the permissions this admin user should have. <strong>Full Access (Pastor)</strong> grants all permissions automatically.</>
-                      ) : (
-                        <>Select the permissions this leader should have. Leaders cannot have Super Admin access.</>
-                      )}
-                    </p>
-                  </div>
-                  {PERMISSIONS.map(permission => {
-                    const isChecked = editPermissions.includes(permission.key);
-                    const isSuperAdmin = permission.key === 'SUPER_ADMIN';
-                    const isLeader = editRole === 'LEADER';
-                    const isSuperAdminHidden = isLeader && isSuperAdmin;
-                    const isDisabled = (editPermissions.includes('SUPER_ADMIN') && !isSuperAdmin) || (isLeader && isSuperAdmin);
-                    
-                    // Hide SUPER_ADMIN for Leaders
-                    if (isSuperAdminHidden) {
-                      return null;
-                    }
-                    
-                    return (
-                      <label 
-                        key={permission.key}
-                        className={`flex items-center gap-3 p-3 rounded border ${isDisabled ? 'bg-gray-50 border-gray-200 opacity-60' : 'bg-white border-gray-200 hover:bg-gray-50'} cursor-pointer`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked || (editPermissions.includes('SUPER_ADMIN') && !isSuperAdmin)}
-                          disabled={isDisabled}
-                          onChange={(e) => {
-                            if (isSuperAdmin) {
-                              if (e.target.checked) {
-                                // If SUPER_ADMIN is checked, set all permissions
-                                setEditPermissions(PERMISSIONS.map(p => p.key));
-                              } else {
-                                // If SUPER_ADMIN is unchecked, remove it
-                                setEditPermissions(editPermissions.filter(p => p !== 'SUPER_ADMIN'));
-                              }
-                            } else {
-                              // Toggle individual permission
-                              if (e.target.checked) {
-                                setEditPermissions([...editPermissions, permission.key]);
-                              } else {
-                                setEditPermissions(editPermissions.filter(p => p !== permission.key));
-                              }
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: 'center', color: 'var(--color-text-dim)', padding: '2.5rem' }}>
+                      No members found
+                    </td>
+                  </tr>
+                ) : filtered.map(u => (
+                  <>
+                    <tr key={u.id}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                          <div className="nb-avatar">
+                            {u.avatarUrl
+                              ? <img src={u.avatarUrl} alt="" />
+                              : getInitials(u.firstName, u.lastName)
                             }
-                          }}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        />
-                        <div className="flex-1">
-                          <div className="font-medium text-gray-900">{permission.label}</div>
-                          {isSuperAdmin && isChecked && (
-                            <div className="text-xs text-blue-600 mt-1">All permissions granted</div>
+                          </div>
+                          <div>
+                            <p style={{ fontWeight: 500, color: 'var(--color-text)' }}>
+                              {u.firstName} {u.lastName}
+                            </p>
+                            <p style={{ fontSize: '0.75rem', color: 'var(--color-text-dim)' }}>{u.email}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td><span className={roleColor(u.role)}>{u.role}</span></td>
+                      <td>
+                        <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                          {u.membershipStatus ?? '—'}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                          {(u.tags ?? []).slice(0, 3).map((ut: any) => (
+                            <span
+                              key={ut.tag?.id}
+                              className="nb-badge"
+                              style={{ background: `${ut.tag?.color}22`, color: ut.tag?.color, border: `1px solid ${ut.tag?.color}44` }}
+                            >
+                              {ut.tag?.name}
+                            </span>
+                          ))}
+                          {(u.tags ?? []).length > 3 && (
+                            <span className="nb-badge nb-badge-gold">+{u.tags.length - 3}</span>
                           )}
                         </div>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
+                      </td>
+                      <td style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>
+                        {new Date(u.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.375rem' }}>
+                          <button
+                            className="btn-ghost"
+                            style={{ padding: '0.3rem 0.6rem' }}
+                            onClick={() => setExpandedUser(expandedUser === u.id ? null : u.id)}
+                            title="Expand details"
+                          >
+                            {expandedUser === u.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          </button>
+                          <button
+                            className="btn-ghost"
+                            style={{ padding: '0.3rem 0.6rem' }}
+                            onClick={() => openEdit(u)}
+                            title="Edit member"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                          <button
+                            className="btn-ghost"
+                            style={{ padding: '0.3rem 0.6rem', borderColor: 'rgba(248,113,113,0.3)', color: 'var(--color-danger)' }}
+                            onClick={() => deleteUser(u.id)}
+                            title="Remove member"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {expandedUser === u.id && (
+                      <tr key={`${u.id}-expanded`}>
+                        <td colSpan={6} style={{ background: 'var(--color-surface2)', padding: '1.25rem 1.5rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                            {[
+                              ['Phone', u.phone],
+                              ['Gender', u.gender],
+                              ['Marital Status', u.maritalStatus],
+                              ['Baptized', u.isBaptized ? 'Yes' : 'No'],
+                              ['Attendance', u.attendanceFreq],
+                              ['Discipleship Stage', u.discipleshipStage],
+                            ].map(([label, value]) => (
+                              <div key={label as string}>
+                                <p style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-dim)', marginBottom: '0.2rem' }}>
+                                  {label}
+                                </p>
+                                <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                                  {(value as string) ?? '—'}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                          {/* Tag assignment */}
+                          <div style={{ marginTop: '1rem' }}>
+                            <p style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-dim)', marginBottom: '0.5rem' }}>
+                              Assign Tags
+                            </p>
+                            <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
+                              {tags.map((tag: any) => {
+                                const assigned = (u.tags ?? []).some((ut: any) => ut.tag?.id === tag.id);
+                                return (
+                                  <button
+                                    key={tag.id}
+                                    onClick={() => assigned ? removeTag(u.id, tag.id) : assignTag(u.id, tag.id)}
+                                    className="nb-badge"
+                                    style={{
+                                      background: assigned ? `${tag.color}33` : 'transparent',
+                                      color: tag.color,
+                                      border: `1px solid ${tag.color}55`,
+                                      cursor: 'pointer',
+                                      display: 'flex', alignItems: 'center', gap: '0.25rem',
+                                    }}
+                                  >
+                                    {assigned && <Check size={10} />}
+                                    {tag.name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Edit User Modal */}
+      {editUser && (
+        <div className="nb-modal-overlay" onClick={e => e.target === e.currentTarget && setEditUser(null)}>
+          <div className="nb-modal">
+            <div className="nb-modal-header">
+              <h3 className="font-serif" style={{ fontSize: '1.125rem', color: 'var(--color-text)' }}>
+                Edit Member — {editUser.firstName} {editUser.lastName}
+              </h3>
+              <button onClick={() => setEditUser(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
+                <X size={18} />
+              </button>
             </div>
 
-            <div className="p-6 border-t bg-gray-50 flex justify-between items-center gap-2">
-              <div>
-                {isSuperAdmin() && selectedUser && selectedUser.id !== getCurrentUser()?.id && (
-                  <button 
-                    onClick={handleDeleteUser}
-                    className="px-4 py-2 text-red-600 hover:bg-red-50 rounded flex items-center gap-2 font-medium"
-                  >
-                    <Trash2 size={16} />
-                    Delete User
-                  </button>
-                )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label>Role</label>
+                  <select value={editRole} onChange={e => setEditRole(e.target.value)}>
+                    <option value="MEMBER">Member</option>
+                    <option value="LEADER">Leader</option>
+                    <option value="ADMIN">Admin</option>
+                    <option value="GUEST">Guest</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Gender</label>
+                  <select value={editGender} onChange={e => setEditGender(e.target.value)}>
+                    <option value="">Not specified</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Marital Status</label>
+                  <select value={editMarital} onChange={e => setEditMarital(e.target.value)}>
+                    <option value="">Not specified</option>
+                    <option value="Single">Single</option>
+                    <option value="Married">Married</option>
+                    <option value="Divorced">Divorced</option>
+                    <option value="Widowed">Widowed</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Membership Status</label>
+                  <select value={editMembership} onChange={e => setEditMembership(e.target.value)}>
+                    <option value="">Not specified</option>
+                    <option value="Active Member">Active Member</option>
+                    <option value="New Member">New Member</option>
+                    <option value="Visitor">Visitor</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <button onClick={() => setShowEditUserModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded">Cancel</button>
-                <button onClick={saveUserDemographics} className="px-6 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">Save Changes</button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <label className="nb-toggle">
+                  <input type="checkbox" checked={editBaptized} onChange={e => setEditBaptized(e.target.checked)} />
+                  <span className="nb-toggle-slider"></span>
+                </label>
+                <span style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>Baptized</span>
+              </div>
+
+              {(editRole === 'ADMIN' || editRole === 'LEADER') && (
+                <div>
+                  <label style={{ marginBottom: '0.625rem' }}>Admin Permissions</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                    {PERMISSIONS.map(p => (
+                      <label key={p.key} style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', textTransform: 'none', letterSpacing: 0, fontSize: '0.8125rem', color: 'var(--color-text-muted)', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={editPerms.includes(p.key)}
+                          onChange={e => setEditPerms(prev =>
+                            e.target.checked ? [...prev, p.key] : prev.filter(x => x !== p.key)
+                          )}
+                          style={{ width: 'auto' }}
+                        />
+                        {p.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <button className="btn-ghost" onClick={() => setEditUser(null)}>Cancel</button>
+                <button className="btn-primary" onClick={saveEdit} disabled={saving}>
+                  {saving ? 'Saving…' : 'Save Changes'}
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* CREATE TAG MODAL */}
+      {/* Tag Modal */}
       {showTagModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
-            <h3 className="text-lg font-bold mb-4">New Tag</h3>
-            <form onSubmit={createTag} className="space-y-4">
-              <input type="text" value={newTagName} onChange={e => setNewTagName(e.target.value)} className="w-full border p-2 rounded" placeholder="Tag Name" required/>
-              <div className="flex gap-2">
-                <input type="color" value={newTagColor} onChange={e => setNewTagColor(e.target.value)} className="h-10 w-16 p-1 border rounded"/>
-                <div className="flex-1 flex items-center px-3 border rounded bg-gray-50 text-gray-500">{newTagColor}</div>
+        <div className="nb-modal-overlay" onClick={e => e.target === e.currentTarget && setShowTagModal(false)}>
+          <div className="nb-modal" style={{ maxWidth: 420 }}>
+            <div className="nb-modal-header">
+              <h3 className="font-serif" style={{ fontSize: '1.125rem', color: 'var(--color-text)' }}>Manage Tags</h3>
+              <button onClick={() => setShowTagModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Existing tags */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '1.25rem' }}>
+              {tags.map((tag: any) => (
+                <span
+                  key={tag.id}
+                  className="nb-badge"
+                  style={{ background: `${tag.color}22`, color: tag.color, border: `1px solid ${tag.color}44` }}
+                >
+                  {tag.name}
+                </span>
+              ))}
+              {tags.length === 0 && (
+                <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-dim)' }}>No tags created yet.</p>
+              )}
+            </div>
+
+            <hr className="nb-divider" />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+              <div>
+                <label>New Tag Name</label>
+                <input
+                  value={newTagName}
+                  onChange={e => setNewTagName(e.target.value)}
+                  placeholder="e.g. Iron & Fire, Choir, Usher"
+                />
               </div>
-              <div className="flex justify-end gap-2">
-                <button type="button" onClick={() => setShowTagModal(false)} className="px-4 py-2">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">Create</button>
+              <div>
+                <label>Tag Color</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <input type="color" value={newTagColor} onChange={e => setNewTagColor(e.target.value)} style={{ width: 44, height: 36, padding: '2px', cursor: 'pointer' }} />
+                  <span className="nb-badge" style={{ background: `${newTagColor}22`, color: newTagColor, border: `1px solid ${newTagColor}44` }}>
+                    {newTagName || 'Preview'}
+                  </span>
+                </div>
               </div>
-            </form>
+              <button className="btn-primary" onClick={createTag} style={{ alignSelf: 'flex-start' }}>
+                <Plus size={14} /> Create Tag
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1,364 +1,129 @@
 'use client';
-
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
+import { BookOpen, Plus, Trash2, X } from 'lucide-react';
 import api from '@/utils/api';
-import { BookOpen, Trash2, Loader2, Plus } from 'lucide-react';
-import { format } from 'date-fns';
 
-interface BibleHighlight {
+interface Highlight {
   id: string;
   book: string;
   chapter: number;
   verse: number;
-  color?: string;
   note?: string;
   createdAt: string;
 }
 
-const BIBLE_BOOKS = [
-  'Genesis',
-  'Exodus',
-  'Leviticus',
-  'Numbers',
-  'Deuteronomy',
-  'Joshua',
-  'Judges',
-  'Ruth',
-  '1 Samuel',
-  '2 Samuel',
-  '1 Kings',
-  '2 Kings',
-  '1 Chronicles',
-  '2 Chronicles',
-  'Ezra',
-  'Nehemiah',
-  'Esther',
-  'Job',
-  'Psalms',
-  'Proverbs',
-  'Ecclesiastes',
-  'Song of Songs',
-  'Isaiah',
-  'Jeremiah',
-  'Lamentations',
-  'Ezekiel',
-  'Daniel',
-  'Hosea',
-  'Joel',
-  'Amos',
-  'Obadiah',
-  'Jonah',
-  'Micah',
-  'Nahum',
-  'Habakkuk',
-  'Zephaniah',
-  'Haggai',
-  'Zechariah',
-  'Malachi',
-  'Matthew',
-  'Mark',
-  'Luke',
-  'John',
-  'Acts',
-  'Romans',
-  '1 Corinthians',
-  '2 Corinthians',
-  'Galatians',
-  'Ephesians',
-  'Philippians',
-  'Colossians',
-  '1 Thessalonians',
-  '2 Thessalonians',
-  '1 Timothy',
-  '2 Timothy',
-  'Titus',
-  'Philemon',
-  'Hebrews',
-  'James',
-  '1 Peter',
-  '2 Peter',
-  '1 John',
-  '2 John',
-  '3 John',
-  'Jude',
-  'Revelation',
-];
+const BOOKS = ['Genesis','Exodus','Leviticus','Numbers','Deuteronomy','Joshua','Judges','Ruth','1 Samuel','2 Samuel','1 Kings','2 Kings','1 Chronicles','2 Chronicles','Ezra','Nehemiah','Esther','Job','Psalms','Proverbs','Ecclesiastes','Song of Solomon','Isaiah','Jeremiah','Lamentations','Ezekiel','Daniel','Hosea','Joel','Amos','Obadiah','Jonah','Micah','Nahum','Habakkuk','Zephaniah','Haggai','Zechariah','Malachi','Matthew','Mark','Luke','John','Acts','Romans','1 Corinthians','2 Corinthians','Galatians','Ephesians','Philippians','Colossians','1 Thessalonians','2 Thessalonians','1 Timothy','2 Timothy','Titus','Philemon','Hebrews','James','1 Peter','2 Peter','1 John','2 John','3 John','Jude','Revelation'];
 
-export default function BibleHighlightsPage() {
-  const [highlights, setHighlights] = useState<BibleHighlight[]>([]);
+export default function BiblePage() {
+  const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  // Form state
-  const [formData, setFormData] = useState({
-    book: 'John',
-    chapter: 1,
-    verse: 1,
-    note: '',
-  });
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ book: 'John', chapter: '1', verse: '1', note: '' });
 
   useEffect(() => {
-    fetchHighlights();
+    api.get('/bible/highlights').then(r => { setHighlights(r.data); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
-  const fetchHighlights = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get('/bible');
-      setHighlights(response.data || []);
-    } catch (error: any) {
-      console.error('Error fetching highlights:', error);
-      alert('Failed to load highlights. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCreateHighlight = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!formData.book || !formData.chapter || !formData.verse) {
-      alert('Please fill in all required fields.');
-      return;
-    }
-
-    setSubmitting(true);
-
     try {
-      await api.post('/bible', {
-        book: formData.book,
-        chapter: parseInt(formData.chapter.toString()),
-        verse: parseInt(formData.verse.toString()),
-        note: formData.note || undefined,
-      });
-
-      // Reset form
-      setFormData({
-        book: 'John',
-        chapter: 1,
-        verse: 1,
-        note: '',
-      });
-
-      // Refresh highlights list
-      fetchHighlights();
-    } catch (error: any) {
-      console.error('Error creating highlight:', error);
-      alert(error.response?.data?.message || 'Failed to create highlight. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
+      const r = await api.post('/bible/highlights', { book: form.book, chapter: parseInt(form.chapter), verse: parseInt(form.verse), note: form.note || undefined });
+      setHighlights(prev => [r.data, ...prev]);
+      setShowForm(false);
+      setForm({ book: 'John', chapter: '1', verse: '1', note: '' });
+    } catch {}
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this highlight?')) {
-      return;
-    }
-
-    setDeletingId(id);
-
-    try {
-      await api.delete(`/bible/${id}`);
-      // Refresh highlights list
-      fetchHighlights();
-    } catch (error: any) {
-      console.error('Error deleting highlight:', error);
-      alert('Failed to delete highlight. Please try again.');
-    } finally {
-      setDeletingId(null);
-    }
+    if (!confirm('Remove this highlight?')) return;
+    try { await api.delete(`/bible/highlights/${id}`); setHighlights(prev => prev.filter(h => h.id !== id)); } catch {}
   };
-
-  const formatReference = (highlight: BibleHighlight): string => {
-    return `${highlight.book} ${highlight.chapter}:${highlight.verse}`;
-  };
-
-  const formatDate = (dateString: string): string => {
-    try {
-      return format(new Date(dateString), 'MMM dd, yyyy');
-    } catch {
-      return dateString;
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <p className="ml-3 text-gray-600">Loading highlights...</p>
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 md:p-8 max-w-4xl mx-auto">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <BookOpen className="w-8 h-8 text-blue-600" />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Pastor's Bible Highlights</h1>
-          <p className="text-gray-600 mt-1">Manage and organize key scriptures for upcoming sermons.</p>
+          <h1 className="font-serif text-3xl text-primary-theme mb-1">Pastor's Bible Highlights</h1>
+          <p className="text-muted-theme text-sm">Manage and organize key scriptures for upcoming sermons</p>
         </div>
+        <button onClick={() => setShowForm(!showForm)} className="btn-gold flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-sans">
+          <Plus className="w-4 h-4" /> Highlight Verse
+        </button>
       </div>
 
-      {/* Create Form */}
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-        <form onSubmit={handleCreateHighlight} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Book Dropdown */}
+      {/* Add Form */}
+      {showForm && (
+        <div className="card-theme p-6 mb-8 rounded-xl border border-accent/30">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-serif text-xl text-primary-theme">Add Scripture Highlight</h2>
+            <button onClick={() => setShowForm(false)} className="text-muted-theme hover:text-primary-theme"><X className="w-5 h-5" /></button>
+          </div>
+          <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label htmlFor="book" className="block text-sm font-medium text-gray-700 mb-2">
-                BOOK <span className="text-red-500">*</span>
-              </label>
-              <select
-                id="book"
-                required
-                value={formData.book}
-                onChange={(e) => setFormData({ ...formData, book: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                {BIBLE_BOOKS.map((book) => (
-                  <option key={book} value={book}>
-                    {book}
-                  </option>
-                ))}
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Book *</label>
+              <select required value={form.book} onChange={e => setForm(p => ({...p, book: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm">
+                {BOOKS.map(b => <option key={b} value={b}>{b}</option>)}
               </select>
             </div>
-
-            {/* Chapter Input */}
             <div>
-              <label htmlFor="chapter" className="block text-sm font-medium text-gray-700 mb-2">
-                CHAPTER <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                id="chapter"
-                required
-                min="1"
-                value={formData.chapter}
-                onChange={(e) => setFormData({ ...formData, chapter: parseInt(e.target.value) || 1 })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Chapter *</label>
+              <input required type="number" min="1" value={form.chapter} onChange={e => setForm(p => ({...p, chapter: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm" />
             </div>
-
-            {/* Verse Input */}
             <div>
-              <label htmlFor="verse" className="block text-sm font-medium text-gray-700 mb-2">
-                VERSE <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                id="verse"
-                required
-                min="1"
-                value={formData.verse}
-                onChange={(e) => setFormData({ ...formData, verse: parseInt(e.target.value) || 1 })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Verse *</label>
+              <input required type="number" min="1" value={form.verse} onChange={e => setForm(p => ({...p, verse: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm" />
             </div>
-
-            {/* Note Input */}
-            <div>
-              <label htmlFor="note" className="block text-sm font-medium text-gray-700 mb-2">
-                NOTE <span className="text-gray-400">(Optional)</span>
-              </label>
-              <input
-                type="text"
-                id="note"
-                value={formData.note}
-                onChange={(e) => setFormData({ ...formData, note: e.target.value })}
-                placeholder="E.g. Theme of redemption..."
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+            <div className="md:col-span-3">
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Note (Optional)</label>
+              <input value={form.note} onChange={e => setForm(p => ({...p, note: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm" placeholder="E.g. Theme of redemption..." />
             </div>
-          </div>
-
-          {/* Submit Button */}
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={submitting}
-              className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed">
-              {submitting ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Creating...</span>
-                </>
-              ) : (
-                <>
-                  <BookOpen className="w-5 h-5" />
-                  <span>Highlight Verse</span>
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
-
-      {/* Saved Highlights List */}
-      <div className="bg-white rounded-lg shadow-md border border-gray-200">
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-gray-900">Saved Highlights</h2>
-            <span className="text-sm text-gray-500">{highlights.length} Saved</span>
-          </div>
+            <div className="md:col-span-3 flex gap-3 justify-end">
+              <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-muted-theme hover:text-primary-theme transition-colors">Cancel</button>
+              <button type="submit" className="btn-gold px-6 py-2 rounded-lg text-sm font-sans">Save Highlight</button>
+            </div>
+          </form>
         </div>
+      )}
 
-        {highlights.length === 0 ? (
+      {/* Highlights Table */}
+      <div className="card-theme rounded-xl border border-border-theme overflow-hidden">
+        <div className="flex items-center justify-between p-5 border-b border-border-theme">
+          <h2 className="font-serif text-xl text-primary-theme">Saved Highlights</h2>
+          <span className="text-xs text-muted-theme">{highlights.length} saved</span>
+        </div>
+        {loading ? (
+          <div className="flex items-center justify-center h-40 text-muted-theme">Loading highlights...</div>
+        ) : highlights.length === 0 ? (
           <div className="p-12 text-center">
-            <BookOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-600">No highlights yet. Create your first highlight above.</p>
+            <BookOpen className="w-12 h-12 text-muted-theme mx-auto mb-3" />
+            <p className="text-muted-theme">No highlights saved yet. Add your first scripture above.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Reference
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Note
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date Added
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
+              <thead>
+                <tr className="border-b border-border-theme">
+                  <th className="text-left px-5 py-3 text-xs uppercase tracking-widest text-muted-theme font-medium">Reference</th>
+                  <th className="text-left px-5 py-3 text-xs uppercase tracking-widest text-muted-theme font-medium">Note</th>
+                  <th className="text-left px-5 py-3 text-xs uppercase tracking-widest text-muted-theme font-medium">Date Added</th>
+                  <th className="text-left px-5 py-3 text-xs uppercase tracking-widest text-muted-theme font-medium">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {highlights.map((highlight) => (
-                  <tr key={highlight.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
+              <tbody>
+                {highlights.map((h, i) => (
+                  <tr key={h.id} className={`border-b border-border-theme/50 hover:bg-surface-theme transition-colors ${i % 2 === 0 ? '' : 'bg-surface-theme/30'}`}>
+                    <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2">
-                        <BookOpen className="w-5 h-5 text-blue-600" />
-                        <span className="text-sm font-medium text-gray-900">
-                          {formatReference(highlight)}
-                        </span>
+                        <BookOpen className="w-4 h-4 text-accent flex-shrink-0" />
+                        <span className="text-sm font-medium text-primary-theme">{h.book} {h.chapter}:{h.verse}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="text-sm text-gray-900">
-                        {highlight.note || (
-                          <span className="text-gray-400 italic">No note added</span>
-                        )}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm text-gray-500">{formatDate(highlight.createdAt)}</span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right">
-                      <button
-                        onClick={() => handleDelete(highlight.id)}
-                        disabled={deletingId === highlight.id}
-                        className="text-red-600 hover:text-red-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                        {deletingId === highlight.id ? (
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-5 h-5" />
-                        )}
+                    <td className="px-5 py-3.5 text-sm text-muted-theme">{h.note || <span className="italic opacity-50">No note added</span>}</td>
+                    <td className="px-5 py-3.5 text-sm text-muted-theme">{new Date(h.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                    <td className="px-5 py-3.5">
+                      <button onClick={() => handleDelete(h.id)} className="p-1.5 text-muted-theme hover:text-red-400 transition-colors">
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </td>
                   </tr>

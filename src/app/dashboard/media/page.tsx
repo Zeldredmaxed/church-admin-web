@@ -1,459 +1,145 @@
 'use client';
-
-import { useEffect, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { Play, Plus, Trash2, Edit2, X, BookOpen } from 'lucide-react';
 import api from '@/utils/api';
-import { Plus, Trash2, X, Loader2, Film, Pencil } from 'lucide-react';
 
 interface Media {
   id: string;
   title: string;
-  type: string; // 'SERMON' or 'LIVESTREAM'
-  url: string;
   speaker: string;
-  summary?: string;
-  publishedAt: string;
+  type: string;
+  thumbnailUrl?: string;
+  videoUrl?: string;
+  createdAt: string;
 }
 
 export default function MediaPage() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const [mediaItems, setMediaItems] = useState<Media[]>([]);
+  const [media, setMedia] = useState<Media[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [deletingMediaId, setDeletingMediaId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-
-  // Form state
-  const [formData, setFormData] = useState({
-    title: '',
-    speaker: '',
-    url: '',
-    type: 'SERMON',
-    summary: '',
-  });
-  const [submitting, setSubmitting] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ title: '', speaker: '', type: 'SERMON', videoUrl: '', thumbnailUrl: '' });
 
   useEffect(() => {
-    fetchMedia();
+    api.get('/media').then(r => { setMedia(r.data); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
-  // Auto-open create modal if action=create
-  useEffect(() => {
-    const action = searchParams.get('action');
-    if (action === 'create') {
-      setShowCreateModal(true);
-      // Remove query param from URL after opening
-      if (typeof window !== 'undefined') {
-        const url = new URL(window.location.href);
-        url.searchParams.delete('action');
-        router.replace(url.pathname + url.search, { scroll: false });
-      }
-    }
-  }, [searchParams, router]);
-
-  const fetchMedia = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get('/media');
-      setMediaItems(response.data);
-    } catch (error: any) {
-      console.error('Error fetching media:', error);
-      alert('Failed to load media. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Extract YouTube video ID from URL
-  const extractYouTubeId = (url: string): string | null => {
-    if (!url) return null;
-    
-    // Handle /live/ links
-    if (url.includes('/live/')) {
-      return url.split('/live/')[1].split(/[?&]/)[0];
-    }
-    
-    // Handle standard links
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-    const match = url.match(regExp);
-    return (match && match[2].length === 11) ? match[2] : null;
-  };
-
-  // Get YouTube thumbnail URL
-  const getYouTubeThumbnail = (url: string): string => {
-    const videoId = extractYouTubeId(url);
-    if (videoId) {
-      return `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
-    }
-    // Fallback placeholder if URL is invalid or not YouTube
-    return 'https://via.placeholder.com/320x180?text=No+Thumbnail';
-  };
-
-  const handleEditMedia = (media: Media) => {
-    setEditingId(media.id);
-    setFormData({
-      title: media.title,
-      speaker: media.speaker,
-      url: media.url,
-      type: media.type,
-      summary: media.summary || '',
-    });
-    setShowCreateModal(true);
-  };
-
-  const handleCloseModal = () => {
-    if (!submitting) {
-      setShowCreateModal(false);
-      setEditingId(null);
-      setFormData({
-        title: '',
-        speaker: '',
-        url: '',
-        type: 'SERMON',
-        summary: '',
-      });
-    }
-  };
-
-  const handleSaveMedia = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitting(true);
-
     try {
-      // Validate YouTube URL
-      const videoId = extractYouTubeId(formData.url);
-      if (!videoId) {
-        alert('Please enter a valid YouTube URL.');
-        setSubmitting(false);
-        return;
-      }
-
-      const payload = {
-        title: formData.title,
-        speaker: formData.speaker,
-        url: formData.url,
-        type: formData.type,
-        summary: formData.summary || undefined,
-      };
-
-      if (editingId) {
-        // Update existing media
-        await api.patch(`/media/${editingId}`, payload);
-      } else {
-        // Create new media
-        await api.post('/media', payload);
-      }
-
-      // Reset form and close modal
-      handleCloseModal();
-
-      // Refresh media list
-      fetchMedia();
-    } catch (error: any) {
-      console.error('Error saving media:', error);
-      alert(error.response?.data?.message || `Failed to ${editingId ? 'update' : 'create'} media. Please try again.`);
-    } finally {
-      setSubmitting(false);
-    }
+      const r = await api.post('/media', form);
+      setMedia(prev => [r.data, ...prev]);
+      setShowForm(false);
+      setForm({ title: '', speaker: '', type: 'SERMON', videoUrl: '', thumbnailUrl: '' });
+    } catch {}
   };
 
-  const handleDeleteMedia = async (mediaId: string, mediaTitle: string) => {
-    if (!confirm(`Are you sure you want to delete "${mediaTitle}"? This action cannot be undone.`)) {
-      return;
-    }
-
-    setDeletingMediaId(mediaId);
-    try {
-      await api.delete(`/media/${mediaId}`);
-      fetchMedia(); // Refresh list
-    } catch (error: any) {
-      console.error('Error deleting media:', error);
-      alert(error.response?.data?.message || 'Failed to delete media. Please try again.');
-    } finally {
-      setDeletingMediaId(null);
-    }
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this media item?')) return;
+    try { await api.delete(`/media/${id}`); setMedia(prev => prev.filter(m => m.id !== id)); } catch {}
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+  const typeColors: Record<string, string> = {
+    SERMON: 'bg-accent/20 text-accent',
+    LIVESTREAM: 'bg-blue-500/20 text-blue-400',
+    WORSHIP: 'bg-purple-500/20 text-purple-400',
   };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading media library...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div>
-      {/* Header Section */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="p-6 md:p-8 max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Media Library</h1>
-          <p className="text-gray-600">Manage sermons, livestreams, and video content</p>
+          <h1 className="font-serif text-3xl text-primary-theme mb-1">Media Library</h1>
+          <p className="text-muted-theme text-sm">Manage sermons, livestreams, and video content</p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Add Media
+        <button onClick={() => setShowForm(!showForm)} className="btn-gold flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-sans">
+          <Plus className="w-4 h-4" /> Add Media
         </button>
       </div>
 
-      {/* Media Grid */}
-      {mediaItems.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-md border border-gray-200 p-12 text-center">
-          <Film className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No media yet</h3>
-          <p className="text-gray-600 mb-4">Get started by adding your first video.</p>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Add Media
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {mediaItems.map((media) => {
-            const isDeleting = deletingMediaId === media.id;
-            const thumbnailUrl = getYouTubeThumbnail(media.url);
-
-            return (
-              <div
-                key={media.id}
-                className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow relative group"
-              >
-                {/* Thumbnail */}
-                <div className="relative aspect-video bg-gray-200 overflow-hidden">
-                  <img
-                    src={thumbnailUrl}
-                    alt={media.title}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      // Fallback if thumbnail fails to load
-                      (e.target as HTMLImageElement).src = 'https://via.placeholder.com/320x180?text=No+Thumbnail';
-                    }}
-                  />
-                  {/* Badge Overlay */}
-                  <div className="absolute top-2 left-2">
-                    <span
-                      className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                        media.type === 'LIVESTREAM'
-                          ? 'bg-red-600 text-white'
-                          : media.type === 'SERMON'
-                          ? 'bg-gray-700 text-white'
-                          : media.type === 'WORSHIP'
-                          ? 'bg-indigo-600 text-white'
-                          : media.type === 'BIBLE_STUDY'
-                          ? 'bg-blue-600 text-white'
-                          : media.type === 'SUNDAY_SCHOOL'
-                          ? 'bg-yellow-500 text-white'
-                          : 'bg-gray-700 text-white'
-                      }`}
-                    >
-                      {media.type === 'LIVESTREAM'
-                        ? 'Livestream'
-                        : media.type === 'SERMON'
-                        ? 'Sermon'
-                        : media.type === 'WORSHIP'
-                        ? 'Worship'
-                        : media.type === 'BIBLE_STUDY'
-                        ? 'Bible Study'
-                        : media.type === 'SUNDAY_SCHOOL'
-                        ? 'Sunday School'
-                        : media.type}
-                    </span>
-                  </div>
-                  {/* Action Buttons Overlay */}
-                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                    <button
-                      onClick={() => handleEditMedia(media)}
-                      disabled={isDeleting}
-                      className="p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      aria-label="Edit media"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteMedia(media.id, media.title)}
-                      disabled={isDeleting}
-                      className="p-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      aria-label="Delete media"
-                    >
-                      {isDeleting ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-4 h-4" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Info Section */}
-                <div className="p-4">
-                  <h3 className="font-semibold text-gray-900 mb-1 line-clamp-2 min-h-[3rem]">
-                    {media.title}
-                  </h3>
-                  <p className="text-sm text-gray-600 mb-2">
-                    <span className="font-medium">Speaker:</span> {media.speaker}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {formatDate(media.publishedAt)}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
+      {/* Create Form */}
+      {showForm && (
+        <div className="card-theme p-6 mb-8 rounded-xl border border-accent/30">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-serif text-xl text-primary-theme">Add New Media</h2>
+            <button onClick={() => setShowForm(false)} className="text-muted-theme hover:text-primary-theme"><X className="w-5 h-5" /></button>
+          </div>
+          <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Title *</label>
+              <input required value={form.title} onChange={e => setForm(p => ({...p, title: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm" placeholder="Sermon title..." />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Speaker *</label>
+              <input required value={form.speaker} onChange={e => setForm(p => ({...p, speaker: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm" placeholder="Pastor Jeffrey Richards" />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Type</label>
+              <select value={form.type} onChange={e => setForm(p => ({...p, type: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm">
+                <option value="SERMON">Sermon</option>
+                <option value="LIVESTREAM">Livestream</option>
+                <option value="WORSHIP">Worship</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Video URL</label>
+              <input value={form.videoUrl} onChange={e => setForm(p => ({...p, videoUrl: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm" placeholder="https://youtube.com/..." />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-widest text-muted-theme mb-1">Thumbnail URL</label>
+              <input value={form.thumbnailUrl} onChange={e => setForm(p => ({...p, thumbnailUrl: e.target.value}))} className="input-theme w-full rounded-lg px-4 py-2.5 text-sm" placeholder="https://..." />
+            </div>
+            <div className="md:col-span-2 flex gap-3 justify-end">
+              <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-muted-theme hover:text-primary-theme transition-colors">Cancel</button>
+              <button type="submit" className="btn-gold px-6 py-2 rounded-lg text-sm font-sans">Add Media</button>
+            </div>
+          </form>
         </div>
       )}
 
-      {/* Create Media Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
-            onClick={handleCloseModal}
-          ></div>
-
-          {/* Modal */}
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-lg shadow-xl max-w-lg w-full">
-              {/* Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-200">
-                <h2 className="text-2xl font-bold text-gray-900">
-                  {editingId ? 'Edit Media' : 'Add New Media'}
-                </h2>
-                <button
-                  onClick={handleCloseModal}
-                  disabled={submitting}
-                  className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
-                >
-                  <X className="w-6 h-6" />
-                </button>
+      {/* Media Grid */}
+      {loading ? (
+        <div className="flex items-center justify-center h-40 text-muted-theme">Loading media...</div>
+      ) : media.length === 0 ? (
+        <div className="card-theme rounded-xl p-12 text-center">
+          <Play className="w-12 h-12 text-muted-theme mx-auto mb-3" />
+          <p className="text-muted-theme">No media uploaded yet. Add your first sermon above.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {media.map(item => (
+            <div key={item.id} className="card-theme rounded-xl border border-border-theme overflow-hidden group">
+              {/* Thumbnail */}
+              <div className="relative aspect-video bg-surface-theme overflow-hidden">
+                {item.thumbnailUrl ? (
+                  <img src={item.thumbnailUrl} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <Play className="w-10 h-10 text-muted-theme" />
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  {item.videoUrl && (
+                    <a href={item.videoUrl} target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-full bg-accent flex items-center justify-center">
+                      <Play className="w-5 h-5 text-black ml-0.5" />
+                    </a>
+                  )}
+                </div>
+                <span className={`absolute top-2 left-2 text-xs px-2 py-0.5 rounded-full font-sans font-medium ${typeColors[item.type] || 'bg-white/10 text-white'}`}>{item.type}</span>
               </div>
-
-              {/* Form */}
-              <form onSubmit={handleSaveMedia} className="p-6 space-y-4">
-                <div>
-                  <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
-                    Title <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="title"
-                    required
-                    value={formData.title}
-                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    className="bg-white text-gray-900 border border-gray-300 w-full px-4 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="e.g., Sunday Morning Service"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="speaker" className="block text-sm font-medium text-gray-700 mb-1">
-                    Speaker <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="speaker"
-                    required
-                    value={formData.speaker}
-                    onChange={(e) => setFormData({ ...formData, speaker: e.target.value })}
-                    className="bg-white text-gray-900 border border-gray-300 w-full px-4 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="e.g., Pastor John"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="url" className="block text-sm font-medium text-gray-700 mb-1">
-                    YouTube URL <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="url"
-                    id="url"
-                    required
-                    value={formData.url}
-                    onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                    className="bg-white text-gray-900 border border-gray-300 w-full px-4 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="https://www.youtube.com/watch?v=..."
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Supports youtube.com/watch?v= and youtu.be/ formats
-                  </p>
-                </div>
-
-                <div>
-                  <label htmlFor="type" className="block text-sm font-medium text-gray-700 mb-1">
-                    Type <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    id="type"
-                    required
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                    className="bg-white text-gray-900 border border-gray-300 w-full px-4 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="SERMON">Sermon</option>
-                    <option value="LIVESTREAM">Livestream</option>
-                    <option value="WORSHIP">Worship</option>
-                    <option value="BIBLE_STUDY">Bible Study</option>
-                    <option value="SUNDAY_SCHOOL">Sunday School</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="summary" className="block text-sm font-medium text-gray-700 mb-1">
-                    Sermon Summary / Key Points
-                  </label>
-                  <textarea
-                    id="summary"
-                    rows={4}
-                    value={formData.summary}
-                    onChange={(e) => setFormData({ ...formData, summary: e.target.value })}
-                    className="bg-white text-gray-900 border border-gray-300 w-full px-4 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y min-h-[100px]"
-                    placeholder="Paste the sermon notes here. This allows the AI Assistant to answer questions about this sermon."
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Paste the sermon notes here. This allows the AI Assistant to answer questions about this sermon.
-                  </p>
-                </div>
-
-                {/* Footer */}
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
-                  <button
-                    type="button"
-                    onClick={handleCloseModal}
-                    disabled={submitting}
-                    className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {editingId ? 'Update Media' : 'Add Media'}
+              {/* Info */}
+              <div className="p-4">
+                <h3 className="font-serif text-base text-primary-theme mb-1 line-clamp-2">{item.title}</h3>
+                <p className="text-muted-theme text-xs mb-3">Speaker: {item.speaker}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-theme">{new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                  <button onClick={() => handleDelete(item.id)} className="p-1.5 text-muted-theme hover:text-red-400 transition-colors">
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
-              </form>
+              </div>
             </div>
-          </div>
+          ))}
         </div>
       )}
     </div>
