@@ -4,6 +4,17 @@ import { useState, useEffect } from 'react';
 import api from '@/utils/api';
 import Link from 'next/link';
 
+const INTEREST_OPTIONS = [
+  'Sunday Morning Service',
+  'Wednesday Bible Study',
+  'Small Groups',
+  'Ministries',
+  "Iron & Fire Men's Ministry",
+  'Women\'s Ministry',
+  'Youth Ministry',
+  'Volunteer Opportunities',
+];
+
 export default function ConnectPage() {
   // Form State
   const [firstName, setFirstName] = useState('');
@@ -11,18 +22,42 @@ export default function ConnectPage() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [visitStatus, setVisitStatus] = useState('');
+  const [interests, setInterests] = useState<string[]>([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [submittedName, setSubmittedName] = useState('');
+  const [submitError, setSubmitError] = useState('');
 
   // Menu State
   const [menuOpen, setMenuOpen] = useState(false);
   const [navVisible, setNavVisible] = useState(true);
   const [navAtTop, setNavAtTop] = useState(true);
 
+  const toggleInterest = (interest: string) => {
+    setInterests(prev =>
+      prev.includes(interest)
+        ? prev.filter(i => i !== interest)
+        : [...prev, interest]
+    );
+  };
+
+  // Map visit status to membershipStatus
+  const mapVisitStatus = (status: string) => {
+    const map: Record<string, string> = {
+      first_time: 'visitor',
+      returning: 'regular',
+      joining: 'prospective_member',
+      info: 'visitor',
+    };
+    return map[status] || 'visitor';
+  };
+
   // Handle Form Submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setSubmitError('');
 
     try {
       await api.post('/users', {
@@ -30,22 +65,31 @@ export default function ConnectPage() {
         lastName,
         email,
         phone,
-        password: 'ChangeMe123', // Temporary password for connection card
-        visitStatus,
-        message,
+        password: 'NewBirth2025!', // Temporary password — user can change via app
+        membershipStatus: mapVisitStatus(visitStatus),
+        ministryInterests: interests,
+        attendanceFreq: visitStatus === 'first_time' ? 'first_time' : visitStatus === 'returning' ? 'occasional' : 'regular',
+        communicationPref: 'Email',
       });
 
-      alert('Thank you! We\'ll be in touch soon.');
-      // Reset form
+      // Success
+      setSubmittedName(firstName);
+      setSubmitted(true);
       setFirstName('');
       setLastName('');
       setEmail('');
       setPhone('');
       setVisitStatus('');
+      setInterests([]);
       setMessage('');
     } catch (error: any) {
       console.error('Submit error:', error);
-      alert('Failed to submit. Please try again.');
+      const msg = error?.response?.data?.message || '';
+      if (msg.toLowerCase().includes('unique') || msg.toLowerCase().includes('already')) {
+        setSubmitError('This email is already registered. Please use a different email or contact us directly.');
+      } else {
+        setSubmitError('Something went wrong. Please try again or call us at 317-797-3838.');
+      }
     } finally {
       setLoading(false);
     }
@@ -338,6 +382,36 @@ export default function ConnectPage() {
       {/* 2. CONNECTION FORM SECTION */}
       <section className="z-30 -mt-24 pr-6 pb-24 pl-6 relative">
         <div className="max-w-3xl mx-auto bg-navy-dark border border-white/5 shadow-2xl rounded-sm p-8 md:p-12 animate-[fadeIn_1s_ease-out_0.8s_forwards] opacity-0 translate-y-4">
+
+          {/* SUCCESS STATE */}
+          {submitted ? (
+            <div className="flex flex-col items-center text-center gap-6 py-12">
+              <div className="w-20 h-20 rounded-full bg-brand/20 border border-brand/40 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10 text-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-3xl font-playfair text-white mb-3">Thank You, {submittedName || 'Friend'}!</h2>
+                <p className="text-white/70 font-sans leading-relaxed max-w-md">
+                  Your connection card has been received. Our team will be in touch with you soon.
+                </p>
+              </div>
+              <div className="mt-4 p-4 rounded-sm border border-white/10 bg-white/5 text-left w-full max-w-sm">
+                <p className="text-xs uppercase tracking-widest text-brand mb-2 font-medium">Your App Access</p>
+                <p className="text-sm text-white/70 font-sans">
+                  An account has been created for you. Download the <strong className="text-white">New Birth PWC app</strong> and sign in with your email and the temporary password: <code className="text-brand font-mono">NewBirth2025!</code>
+                </p>
+                <p className="text-xs text-white/40 mt-2">You can change your password after logging in.</p>
+              </div>
+              <button
+                onClick={() => setSubmitted(false)}
+                className="mt-2 text-xs uppercase tracking-widest text-white/40 hover:text-brand transition-colors font-sans"
+              >
+                Submit another card
+              </button>
+            </div>
+          ) : (
           <form className="flex flex-col gap-8" onSubmit={handleSubmit}>
             {/* Personal Info */}
             <div className="flex flex-col gap-6">
@@ -478,6 +552,42 @@ export default function ConnectPage() {
               </div>
             </div>
 
+            {/* Interests */}
+            <div className="flex flex-col gap-6 pt-4">
+              <h3 className="text-xs uppercase tracking-[0.2em] text-brand font-medium border-b border-white/5 pb-2">
+                I&apos;m Interested In
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {INTEREST_OPTIONS.map((interest) => {
+                  const checked = interests.includes(interest);
+                  return (
+                    <label key={interest} className="cursor-pointer group relative flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={checked}
+                        onChange={() => toggleInterest(interest)}
+                      />
+                      <div
+                        className="w-5 h-5 rounded-sm border flex items-center justify-center flex-shrink-0 transition-all"
+                        style={{
+                          backgroundColor: checked ? 'var(--color-brand)' : 'transparent',
+                          borderColor: checked ? 'var(--color-brand)' : 'rgba(255,255,255,0.3)',
+                        }}
+                      >
+                        {checked && (
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                          </svg>
+                        )}
+                      </div>
+                      <span className={`text-sm transition-colors ${checked ? 'text-white' : 'text-white/70 group-hover:text-white'}`}>{interest}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Message */}
             <div className="flex flex-col gap-6 pt-4">
               <h3 className="text-xs uppercase tracking-[0.2em] text-brand font-medium border-b border-white/5 pb-2">
@@ -498,6 +608,13 @@ export default function ConnectPage() {
               </div>
             </div>
 
+            {/* Error Message */}
+            {submitError && (
+              <div className="p-4 rounded-sm border border-red-500/30 bg-red-500/10 text-red-300 text-sm font-sans">
+                {submitError}
+              </div>
+            )}
+
             {/* Submit */}
             <div className="pt-6">
               <button
@@ -505,13 +622,24 @@ export default function ConnectPage() {
                 disabled={loading}
                 className="w-full btn-magnetic bg-brand py-4 text-white uppercase tracking-[0.2em] text-xs font-semibold shadow-xl hover:shadow-brand/20 transition-all border border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <span className="relative z-10">{loading ? 'Submitting...' : 'Submit Connection Card'}</span>
+                <span className="relative z-10">
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Submitting...
+                    </span>
+                  ) : 'Submit Connection Card'}
+                </span>
               </button>
               <p className="text-center text-white/30 text-xs mt-4 font-sans">
                 Your information is safe and will only be used to connect with you.
               </p>
             </div>
           </form>
+          )}
         </div>
       </section>
 
